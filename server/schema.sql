@@ -43,7 +43,8 @@ CREATE TABLE IF NOT EXISTS messages (
   read_at TIMESTAMPTZ
 );
 
-CREATE INDEX IF NOT EXISTS idx_messages_room_created ON messages(room_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_messages_room_created
+ON messages(room_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS media (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -57,13 +58,19 @@ CREATE TABLE IF NOT EXISTS media (
   content_hash TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX IF NOT EXISTS idx_media_room ON media(room_id);
-CREATE UNIQUE INDEX IF NOT EXISTS uq_media_room_hash ON media(room_id, content_hash) WHERE content_hash IS NOT NULL;
 
-ALTER TABLE messages ADD COLUMN IF NOT EXISTS attachment_name TEXT;
-ALTER TABLE media ADD COLUMN IF NOT EXISTS content_hash TEXT;
-CREATE UNIQUE INDEX IF NOT EXISTS uq_media_room_hash ON media(room_id, content_hash) WHERE content_hash IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_media_room
+ON media(room_id);
 
+CREATE UNIQUE INDEX IF NOT EXISTS uq_media_room_hash
+ON media(room_id, content_hash)
+WHERE content_hash IS NOT NULL;
+
+ALTER TABLE messages
+ADD COLUMN IF NOT EXISTS attachment_name TEXT;
+
+ALTER TABLE media
+ADD COLUMN IF NOT EXISTS content_hash TEXT;
 
 CREATE TABLE IF NOT EXISTS accounts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -75,11 +82,27 @@ CREATE TABLE IF NOT EXISTS accounts (
   UNIQUE(room_id, role)
 );
 
-ALTER TABLE devices DROP CONSTRAINT IF EXISTS devices_role_check;
-ALTER TABLE devices ADD CONSTRAINT devices_role_three_check CHECK (role IN ('person1', 'person2', 'person3'));
-ALTER TABLE accounts DROP CONSTRAINT IF EXISTS accounts_role_check;
-ALTER TABLE accounts ADD CONSTRAINT accounts_role_three_check CHECK (role IN ('person1', 'person2', 'person3'));
+-- Make the devices role constraint idempotent
+ALTER TABLE devices
+DROP CONSTRAINT IF EXISTS devices_role_check;
 
+ALTER TABLE devices
+DROP CONSTRAINT IF EXISTS devices_role_three_check;
+
+ALTER TABLE devices
+ADD CONSTRAINT devices_role_three_check
+CHECK (role IN ('person1', 'person2', 'person3'));
+
+-- Make the accounts role constraint idempotent
+ALTER TABLE accounts
+DROP CONSTRAINT IF EXISTS accounts_role_check;
+
+ALTER TABLE accounts
+DROP CONSTRAINT IF EXISTS accounts_role_three_check;
+
+ALTER TABLE accounts
+ADD CONSTRAINT accounts_role_three_check
+CHECK (role IN ('person1', 'person2', 'person3'));
 
 CREATE TABLE IF NOT EXISTS mood_checkins (
   room_id UUID NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
