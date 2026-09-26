@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 enum NoteKind { note, checklist, letter, memory }
-enum AppThemeChoice { turquoise, sky, red, blue }
+enum AppThemeChoice { blue, red, purple, black }
 
 enum NoteFolder { personal, ideas, tasks, memories, letters, dreams, private }
 

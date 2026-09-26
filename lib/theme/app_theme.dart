@@ -10,31 +10,32 @@ class ThemeColors {
 }
 
 ThemeColors colorsFor(AppThemeChoice choice) => switch (choice) {
-      AppThemeChoice.turquoise => const ThemeColors(
-          primary: Color(0xFF9A66FF),
-          secondary: Color(0xFF338DFF),
-          accent: Color(0xFFFF3F62),
-          glow: Color(0xFF8C52FF),
-        ),
-      AppThemeChoice.sky => const ThemeColors(
-          primary: Color(0xFF338DFF),
-          secondary: Color(0xFF9A66FF),
-          accent: Color(0xFFFF3F62),
-          glow: Color(0xFF338DFF),
+      AppThemeChoice.blue => const ThemeColors(
+          primary: Color(0xFF168CFF),
+          secondary: Color(0xFF0A63D8),
+          accent: Color(0xFF3DB5FF),
+          glow: Color(0xFF1677FF),
         ),
       AppThemeChoice.red => const ThemeColors(
-          primary: Color(0xFFFF3F62),
-          secondary: Color(0xFF9A66FF),
-          accent: Color(0xFF338DFF),
-          glow: Color(0xFFFF3F62),
+          primary: Color(0xFFFF3D57),
+          secondary: Color(0xFFD91E3D),
+          accent: Color(0xFFFF6B7A),
+          glow: Color(0xFFFF2E4D),
         ),
-      AppThemeChoice.blue => const ThemeColors(
-          primary: Color(0xFF338DFF),
-          secondary: Color(0xFF9A66FF),
-          accent: Color(0xFFFF3F62),
-          glow: Color(0xFF338DFF),
+      AppThemeChoice.purple => const ThemeColors(
+          primary: Color(0xFFA45BFF),
+          secondary: Color(0xFF7437D8),
+          accent: Color(0xFFC88BFF),
+          glow: Color(0xFF9B45FF),
+        ),
+      AppThemeChoice.black => const ThemeColors(
+          primary: Color(0xFFE7E7EA),
+          secondary: Color(0xFF9A9AA3),
+          accent: Color(0xFFFFFFFF),
+          glow: Color(0xFF64646D),
         ),
     };
+
 
 class AppPalette { static const page = Color(0xB805070C); static const surface = Color(0xEE0A101A); static const surface2 = Color(0xF00D1522); static const card = Color(0xF20B121D); }
 

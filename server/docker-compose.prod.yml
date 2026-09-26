@@ -25,10 +25,12 @@ services:
       MEDIA_DIR: /data/media
       MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-25}
       SHARED_ROOM_KEY: ${SHARED_ROOM_KEY:-big-sister-private-room-change-me}
-      LITTLE_BROTHER_PASSWORD: ${LITTLE_BROTHER_PASSWORD:-}
-      BIG_SISTER_PASSWORD: ${BIG_SISTER_PASSWORD:-}
-      LITTLE_BROTHER_LABEL: ${LITTLE_BROTHER_LABEL:-داداش کوچیکه}
-      BIG_SISTER_LABEL: ${BIG_SISTER_LABEL:-آبجی بزرگ}
+      PERSON1_PASSWORD: ${PERSON1_PASSWORD:-}
+      PERSON2_PASSWORD: ${PERSON2_PASSWORD:-}
+      PERSON3_PASSWORD: ${PERSON3_PASSWORD:-}
+      PERSON1_LABEL: ${PERSON1_LABEL:-داداش کوچیکه ۱}
+      PERSON2_LABEL: ${PERSON2_LABEL:-آبجی بزرگه}
+      PERSON3_LABEL: ${PERSON3_LABEL:-داداش کوچیکه ۲}
     volumes:
       - media_data:/data/media
     depends_on:

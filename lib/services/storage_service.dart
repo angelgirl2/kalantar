@@ -120,7 +120,13 @@ class StorageService {
   }
   NoteItem? _find(String id) { for (final n in _notes) { if (n.id == id) return n; } return null; }
 
-  AppThemeChoice loadTheme() => AppThemeChoice.values.firstWhere((e) => e.name == prefs.getString(themeKey), orElse: () => AppThemeChoice.turquoise);
+  AppThemeChoice loadTheme() => switch (prefs.getString(themeKey)) {
+      'red' => AppThemeChoice.red,
+      'blue' || 'sky' => AppThemeChoice.blue,
+      'purple' || 'turquoise' => AppThemeChoice.purple,
+      'black' => AppThemeChoice.black,
+      _ => AppThemeChoice.blue,
+    };
   Future<void> saveTheme(AppThemeChoice value) => prefs.setString(themeKey, value.name);
 
   int dailyQuoteIndex(int count) {
@@ -371,7 +377,7 @@ class StorageService {
     await prefs.setStringList(cloudDeletedIdsKey, deleted);
     await _persist();
     final theme = json['theme'] as String?;
-    if (theme != null) await saveTheme(AppThemeChoice.values.firstWhere((e) => e.name == theme, orElse: () => AppThemeChoice.turquoise));
+    if (theme != null) await saveTheme(switch (theme) { 'red' => AppThemeChoice.red, 'purple' || 'turquoise' => AppThemeChoice.purple, 'black' => AppThemeChoice.black, _ => AppThemeChoice.blue });
     final pin = json['pin'] as String?;
     if (pin != null && pin.isNotEmpty) await savePin(pin); else await clearPin();
     await saveBiometric(json['biometric'] as bool? ?? false);

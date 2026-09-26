@@ -19,11 +19,18 @@ const JWT_SECRET = String(process.env.JWT_SECRET || '').trim();
 const MEDIA_DIR = process.env.MEDIA_DIR || '/data/media';
 const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB || 25);
 const SHARED_ROOM_KEY = process.env.SHARED_ROOM_KEY || 'big-sister-private-room';
-const LITTLE_BROTHER_PASSWORD = process.env.LITTLE_BROTHER_PASSWORD || process.env.ME_PASSWORD || '';
-const BIG_SISTER_PASSWORD = process.env.BIG_SISTER_PASSWORD || process.env.SISTER_PASSWORD || '';
-const LITTLE_BROTHER_LABEL = process.env.LITTLE_BROTHER_LABEL || process.env.ME_LABEL || 'داداش کوچیکه';
-const BIG_SISTER_LABEL = process.env.BIG_SISTER_LABEL || process.env.SISTER_LABEL || 'آبجی بزرگه';
+const PERSON1_PASSWORD = String(process.env.PERSON1_PASSWORD || process.env.LITTLE_BROTHER_PASSWORD || process.env.ME_PASSWORD || '').trim();
+const PERSON2_PASSWORD = String(process.env.PERSON2_PASSWORD || process.env.BIG_SISTER_PASSWORD || process.env.SISTER_PASSWORD || '').trim();
+const PERSON3_PASSWORD = String(process.env.PERSON3_PASSWORD || process.env.LITTLE_BROTHER2_PASSWORD || '').trim();
+const PERSON1_LABEL = String(process.env.PERSON1_LABEL || process.env.LITTLE_BROTHER_LABEL || process.env.ME_LABEL || 'داداش کوچیکه ۱').trim();
+const PERSON2_LABEL = String(process.env.PERSON2_LABEL || process.env.BIG_SISTER_LABEL || process.env.SISTER_LABEL || 'آبجی بزرگه').trim();
+const PERSON3_LABEL = String(process.env.PERSON3_LABEL || process.env.LITTLE_BROTHER2_LABEL || 'داداش کوچیکه ۲').trim();
 const ANONYMOUS_LABEL = process.env.ANONYMOUS_LABEL || 'ناشناس';
+// Legacy aliases kept only for old database rows/configurations.
+const LITTLE_BROTHER_PASSWORD = PERSON1_PASSWORD;
+const BIG_SISTER_PASSWORD = PERSON2_PASSWORD;
+const LITTLE_BROTHER_LABEL = PERSON1_LABEL;
+const BIG_SISTER_LABEL = PERSON2_LABEL;
 const DATABASE_URL = String(process.env.DATABASE_URL || '').trim();
 const pool = new Pool({
   connectionString: DATABASE_URL || undefined,
@@ -101,7 +108,16 @@ async function touchDevice(deviceId) {
 }
 
 function validateRole(role) {
-  return role === 'me' || role === 'sister' || role === 'guest';
+  return role === 'me' || role === 'sister' || role === 'brother2' || role === 'guest';
+}
+
+function credentialsForRole(role) {
+  switch (role) {
+    case 'me': return { password: PERSON1_PASSWORD, label: PERSON1_LABEL };
+    case 'sister': return { password: PERSON2_PASSWORD, label: PERSON2_LABEL };
+    case 'brother2': return { password: PERSON3_PASSWORD, label: PERSON3_LABEL };
+    default: return { password: '', label: ANONYMOUS_LABEL };
+  }
 }
 
 function chooseNewer(localItem, remoteItem) {
@@ -192,15 +208,19 @@ app.post('/api/auth/login', async (req, res) => {
     const room = await ensureSharedRoom();
     let role = requestedRole;
     if (!role) {
-      const sisterMatch = BIG_SISTER_PASSWORD && password === BIG_SISTER_PASSWORD;
-      const brotherMatch = LITTLE_BROTHER_PASSWORD && password === LITTLE_BROTHER_PASSWORD;
-      if (sisterMatch === brotherMatch) {
-        return res.status(401).json({ error: sisterMatch ? 'duplicate_passwords' : 'invalid_login' });
+      const matches = [
+        ['me', PERSON1_PASSWORD],
+        ['sister', PERSON2_PASSWORD],
+        ['brother2', PERSON3_PASSWORD],
+      ].filter(([, expectedPassword]) => Boolean(expectedPassword) && password === expectedPassword);
+      if (matches.length !== 1) {
+        return res.status(401).json({ error: matches.length > 1 ? 'duplicate_passwords' : 'invalid_login' });
       }
-      role = sisterMatch ? 'sister' : 'me';
+      role = matches[0][0];
     }
-    const label = role === 'guest' ? ANONYMOUS_LABEL : (role === 'me' ? LITTLE_BROTHER_LABEL : BIG_SISTER_LABEL);
-    const expected = role === 'me' ? LITTLE_BROTHER_PASSWORD : BIG_SISTER_PASSWORD;
+    const credentials = credentialsForRole(role);
+    const label = credentials.label;
+    const expected = credentials.password;
     if (!expected || password !== expected) {
       return res.status(401).json({ error: 'invalid_login' });
     }
@@ -297,13 +317,20 @@ app.get('/api/health', async (_req, res) => {
     return res.status(503).json({
       ok: false,
       service: 'big-sister-sync',
+      build: '3-person-password-v2',
       status: 'starting',
       error: dbInitError || 'database_not_ready',
     });
   }
   try {
     await pool.query('SELECT 1');
-    return res.json({ ok: true, service: 'big-sister-sync', time: new Date().toISOString() });
+    return res.json({
+      ok: true,
+      service: 'big-sister-sync',
+      build: '3-person-password-v2',
+      roles: ['person1', 'sister', 'person3'],
+      time: new Date().toISOString(),
+    });
   } catch (e) {
     dbReady = false;
     dbInitError = 'database_unavailable';
@@ -316,7 +343,7 @@ app.post('/api/pair/create', async (req, res) => {
   if (!validateRole(role)) return res.status(400).json({ error: 'invalid_role' });
   const code = randomCode(8);
   const pairPin = randomPin();
-  const label = role === 'me' ? LITTLE_BROTHER_LABEL : BIG_SISTER_LABEL;
+  const label = credentialsForRole(role).label;
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -900,11 +927,14 @@ async function initDb() {
   if (!DATABASE_URL) {
     throw new Error('DATABASE_URL is missing');
   }
-  if (!LITTLE_BROTHER_PASSWORD) {
-    throw new Error('LITTLE_BROTHER_PASSWORD is missing');
+  if (!PERSON1_PASSWORD) {
+    throw new Error('PERSON1_PASSWORD is missing');
   }
-  if (!BIG_SISTER_PASSWORD) {
-    throw new Error('BIG_SISTER_PASSWORD is missing');
+  if (!PERSON2_PASSWORD) {
+    throw new Error('PERSON2_PASSWORD is missing');
+  }
+  if (!PERSON3_PASSWORD) {
+    throw new Error('PERSON3_PASSWORD is missing');
   }
   if (!JWT_SECRET) {
     throw new Error('JWT_SECRET is missing');
@@ -912,8 +942,9 @@ async function initDb() {
   const sql = await fs.readFile(new URL('../schema.sql', import.meta.url), 'utf8');
   await pool.query(sql);
   const room = await ensureSharedRoom();
-  await ensureAccount(room.id, 'me', LITTLE_BROTHER_PASSWORD, LITTLE_BROTHER_LABEL);
-  await ensureAccount(room.id, 'sister', BIG_SISTER_PASSWORD, BIG_SISTER_LABEL);
+  await ensureAccount(room.id, 'me', PERSON1_PASSWORD, PERSON1_LABEL);
+  await ensureAccount(room.id, 'sister', PERSON2_PASSWORD, PERSON2_LABEL);
+  await ensureAccount(room.id, 'brother2', PERSON3_PASSWORD, PERSON3_LABEL);
 }
 
 async function initDbWithRetry() {

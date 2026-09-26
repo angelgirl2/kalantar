@@ -31,7 +31,9 @@ class _CloudSharedLoginScreenState extends State<CloudSharedLoginScreen> {
       case 'sister':
         return 'آبجی بزرگه';
       case 'me':
-        return 'داداش کوچیکه';
+        return 'داداش کوچیکه ۱';
+      case 'brother2':
+        return 'داداش کوچیکه ۲';
       default:
         return 'ناشناس';
     }
@@ -45,12 +47,14 @@ class _CloudSharedLoginScreenState extends State<CloudSharedLoginScreen> {
     if (raw.contains('room_full')) {
       return 'امکان اتصال جدید وجود ندارد.';
     }
-    if (raw.contains('server_not_ready') ||
+    if (raw.contains('server_credentials_missing') ||
+        raw.contains('server_not_ready') ||
         raw.contains('database_not_ready') ||
         raw.contains('database_unavailable') ||
         raw.contains('login_failed')) {
-      return 'سرور دفتر مشترک آماده نیست.';
+      return 'تنظیمات سرور کامل نیست یا سرور هنوز آماده نشده است.';
     }
+    if (raw.contains('invalid_login')) return 'رمز این حساب نادرست است.';
     if (raw.contains('DioException') ||
         raw.contains('SocketException') ||
         raw.contains('connection refused') ||
@@ -68,7 +72,9 @@ class _CloudSharedLoginScreenState extends State<CloudSharedLoginScreen> {
       status = null;
     });
     try {
-      await cloud.loginAnonymous(role: role);
+      final password = await _askPassword(_labelForRole(role));
+      if (password == null || password.isEmpty) return;
+      await cloud.login(role: role, password: password);
       try {
         await cloud.pullAndApply(widget.storage);
         await cloud.syncNow(widget.storage);
@@ -86,6 +92,42 @@ class _CloudSharedLoginScreenState extends State<CloudSharedLoginScreen> {
     } finally {
       if (mounted) setState(() => busy = false);
     }
+  }
+
+  Future<String?> _askPassword(String title) async {
+    final controller = TextEditingController();
+    var obscure = true;
+    final result = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setLocal) => AlertDialog(
+          title: Text('ورود $title'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            obscureText: obscure,
+            keyboardType: TextInputType.number,
+            textInputAction: TextInputAction.done,
+            decoration: InputDecoration(
+              labelText: 'رمز عبور',
+              prefixIcon: const Icon(Icons.lock_outline_rounded),
+              suffixIcon: IconButton(
+                onPressed: () => setLocal(() => obscure = !obscure),
+                icon: Icon(obscure ? Icons.visibility_rounded : Icons.visibility_off_rounded),
+              ),
+            ),
+            onSubmitted: (_) => Navigator.of(dialogContext).pop(controller.text.trim()),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('لغو')),
+            FilledButton(onPressed: () => Navigator.of(dialogContext).pop(controller.text.trim()), child: const Text('ورود')),
+          ],
+        ),
+      ),
+    );
+    controller.dispose();
+    return result;
   }
 
   Future<void> disconnect() async {
@@ -156,7 +198,7 @@ class _CloudSharedLoginScreenState extends State<CloudSharedLoginScreen> {
                     ),
                     const SizedBox(height: 8),
                     const Text(
-                      'یک اتصال خصوصی و مشترک؛ هویت افراد در بخش‌های مشترک نمایش داده نمی‌شود.',
+                      'دفتر مشترک با رمز جداگانه برای دو داداش کوچیکه و آبجی بزرگه.',
                       textAlign: TextAlign.center,
                       style: TextStyle(color: Colors.white60, height: 1.6),
                     ),
@@ -197,9 +239,9 @@ class _CloudSharedLoginScreenState extends State<CloudSharedLoginScreen> {
               const SizedBox(height: 10),
               _roleButton('آبجی بزرگه', 'sister', c.primary),
               const SizedBox(height: 9),
-              _roleButton('داداش کوچیکه', 'me', c.secondary),
+              _roleButton('داداش کوچیکه ۱', 'me', c.secondary),
               const SizedBox(height: 9),
-              _roleButton('ناشناس', 'guest', c.accent),
+              _roleButton('داداش کوچیکه ۲', 'brother2', c.accent),
               const SizedBox(height: 14),
               if (cloud.configured)
                 OutlinedButton.icon(

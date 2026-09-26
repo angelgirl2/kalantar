@@ -2438,10 +2438,10 @@ class _SettingsTabState extends State<SettingsTab> {
   Widget build(BuildContext context) {
     final c = colorsFor(widget.theme);
     final names = {
-      AppThemeChoice.turquoise: 'فیروزه‌ای',
-      AppThemeChoice.sky: 'آسمانی',
-      AppThemeChoice.red: 'قرمز',
       AppThemeChoice.blue: 'آبی',
+      AppThemeChoice.red: 'قرمز',
+      AppThemeChoice.purple: 'بنفش',
+      AppThemeChoice.black: 'مشکی',
     };
     return ColoredBox(
       color: AppPalette.page,
@@ -5923,7 +5923,7 @@ class _LockScreenState extends State<LockScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final c = colorsFor(AppThemeChoice.turquoise);
+    final c = colorsFor(AppThemeChoice.blue);
     return Scaffold(
       backgroundColor: AppPalette.page,
       body: Center(
@@ -6013,7 +6013,7 @@ class _Glass extends StatelessWidget {
   final VoidCallback? onTap;
   @override
   Widget build(BuildContext context) {
-    final a = accent ?? colorsFor(AppThemeChoice.turquoise).primary;
+    final a = accent ?? colorsFor(AppThemeChoice.blue).primary;
     final content = Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(

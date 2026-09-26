@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS rooms (
 CREATE TABLE IF NOT EXISTS devices (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   room_id UUID NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
-  role VARCHAR(16) NOT NULL CHECK (role IN ('me','sister','guest')),
+  role VARCHAR(16) NOT NULL CHECK (role IN ('me','sister','brother2','guest')),
   label VARCHAR(32) NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS devices (
 );
 
 ALTER TABLE devices DROP CONSTRAINT IF EXISTS devices_role_check;
-ALTER TABLE devices ADD CONSTRAINT devices_role_check CHECK (role IN ('me','sister','guest'));
+ALTER TABLE devices ADD CONSTRAINT devices_role_check CHECK (role IN ('me','sister','brother2','guest'));
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS client_key VARCHAR(128);
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_devices_client_key ON devices(client_key) WHERE client_key IS NOT NULL;
@@ -80,7 +80,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_media_room_hash ON media(room_id, content_h
 CREATE TABLE IF NOT EXISTS accounts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   room_id UUID NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
-  role VARCHAR(16) NOT NULL CHECK (role IN ('me', 'sister')),
+  role VARCHAR(16) NOT NULL CHECK (role IN ('me', 'sister', 'brother2')),
   password_hash TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),

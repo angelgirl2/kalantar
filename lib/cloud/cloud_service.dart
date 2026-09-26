@@ -64,20 +64,19 @@ class CloudService {
     final value = _label?.trim();
     if (value != null && value.isNotEmpty) return value;
     if (_role == 'sister') return 'آبجی بزرگه';
-    if (_role == 'guest') return 'ناشناس';
-    return 'داداش کوچیکه';
+    if (_role == 'brother2') return 'داداش کوچیکه ۲';
+    return 'داداش کوچیکه ۱';
   }
 
   /// نام همراه برای بخش‌های مشترک رابط؛ هرگز تعداد اعضا را نشان نمی‌دهد.
   String get otherDisplayName {
-    if (_role == 'sister') return 'داداش کوچیکه';
-    if (_role == 'me') return 'آبجی بزرگه';
-    return 'دفتر مشترک';
+    if (_role == 'sister') return 'دو داداش کوچیکه';
+    return 'آبجی بزرگه';
   }
 
   String get sharedTitle {
-    if (_role == 'sister' || _role == 'me') return 'آبجی بزرگه ↔ داداش کوچیکه';
-    return 'دفتر مشترک';
+    if (_role == 'sister') return 'آبجی بزرگه ↔ دو داداش کوچیکه';
+    return 'دفتر مشترک خانوادگی';
   }
   String? _role;
   String? _label;
@@ -106,6 +105,17 @@ class CloudService {
     _role = prefs.getString(_roleKey);
     _label = prefs.getString(_labelKey);
     _cachedDeviceId = await _secure.read(key: _deviceIdKey);
+    // Sessions created by the old anonymous/guest flow are not valid anymore.
+    if (_role == 'guest') {
+      _role = null;
+      _label = null;
+      _cachedDeviceId = null;
+      await prefs.remove(_roleKey);
+      await prefs.remove(_labelKey);
+      await _secure.delete(key: _tokenKey);
+      await _secure.delete(key: _roomIdKey);
+      await _secure.delete(key: _deviceIdKey);
+    }
     _dio = _makeDio(normalizedBaseUrl);
     _initialized = true;
     if (configured) {
@@ -134,32 +144,17 @@ class CloudService {
     return value;
   }
 
-  Future<Map<String, dynamic>> loginAnonymous({required String role}) async {
+  Future<Map<String, dynamic>> login({required String role, required String password}) async {
     await init();
     if (_dio == null || normalizedBaseUrl.isEmpty) throw StateError('server_url_missing');
-    final allowed = {'me', 'sister', 'guest'};
+    const allowed = {'me', 'sister', 'brother2'};
     if (!allowed.contains(role)) throw StateError('invalid_role');
-    final response = await _dio!.post(
-      '/api/auth/anonymous',
-      data: {'role': role, 'clientKey': await _clientKeyValue()},
-    );
-    _ensureOk(response);
-    await _saveSession(Map<String, dynamic>.from(response.data as Map));
-    await _connectSocket();
-    return Map<String, dynamic>.from(response.data as Map);
-  }
-
-  Future<Map<String, dynamic>> login({required String password}) async {
-    await init();
-    if (_dio == null || normalizedBaseUrl.isEmpty) throw StateError('server_url_missing');
-    // Do not block login on a separate health request. Railway can briefly
-    // report a 503 while the app is already able to serve authenticated routes,
-    // and a DNS/health failure would otherwise hide the real login response.
     final response = await _dio!.post('/api/auth/login', data: {
+      'role': role,
       'password': password,
     });
     _ensureOk(response);
-    await _saveSession(response.data as Map<String, dynamic>);
+    await _saveSession(Map<String, dynamic>.from(response.data as Map));
     await _connectSocket();
     return Map<String, dynamic>.from(response.data as Map);
   }
