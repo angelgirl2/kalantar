@@ -18,19 +18,31 @@ const ROOM_CODE_TTL_HOURS = Number(process.env.ROOM_CODE_TTL_HOURS || 24);
 const JWT_SECRET = String(process.env.JWT_SECRET || '').trim();
 const MEDIA_DIR = process.env.MEDIA_DIR || '/data/media';
 const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB || 25);
-const SHARED_ROOM_KEY = process.env.SHARED_ROOM_KEY || 'big-sister-private-room';
-const PERSON1_PASSWORD = String(process.env.PERSON1_PASSWORD || process.env.LITTLE_BROTHER_PASSWORD || process.env.ME_PASSWORD || '').trim();
-const PERSON2_PASSWORD = String(process.env.PERSON2_PASSWORD || process.env.BIG_SISTER_PASSWORD || process.env.SISTER_PASSWORD || '').trim();
-const PERSON3_PASSWORD = String(process.env.PERSON3_PASSWORD || process.env.LITTLE_BROTHER2_PASSWORD || '').trim();
-const PERSON1_LABEL = String(process.env.PERSON1_LABEL || process.env.LITTLE_BROTHER_LABEL || process.env.ME_LABEL || 'داداش کوچیکه ۱').trim();
-const PERSON2_LABEL = String(process.env.PERSON2_LABEL || process.env.BIG_SISTER_LABEL || process.env.SISTER_LABEL || 'آبجی بزرگه').trim();
-const PERSON3_LABEL = String(process.env.PERSON3_LABEL || process.env.LITTLE_BROTHER2_LABEL || 'داداش کوچیکه ۲').trim();
-const ANONYMOUS_LABEL = process.env.ANONYMOUS_LABEL || 'ناشناس';
-// Legacy aliases kept only for old database rows/configurations.
-const LITTLE_BROTHER_PASSWORD = PERSON1_PASSWORD;
-const BIG_SISTER_PASSWORD = PERSON2_PASSWORD;
-const LITTLE_BROTHER_LABEL = PERSON1_LABEL;
-const BIG_SISTER_LABEL = PERSON2_LABEL;
+const SHARED_ROOM_KEY = process.env.SHARED_ROOM_KEY || 'kalantar-private-room-2026';
+const PERSONS = Object.freeze({
+  person1: {
+    label: String(process.env.PERSON1_LABEL || process.env.LITTLE_BROTHER_LABEL || process.env.ME_LABEL || 'داداش کوچیکه ۱').trim(),
+    password: String(process.env.PERSON1_PASSWORD || process.env.LITTLE_BROTHER_PASSWORD || process.env.ME_PASSWORD || '').trim(),
+  },
+  person2: {
+    label: String(process.env.PERSON2_LABEL || process.env.BIG_SISTER_LABEL || process.env.SISTER_LABEL || 'آبجی بزرگه').trim(),
+    password: String(process.env.PERSON2_PASSWORD || process.env.BIG_SISTER_PASSWORD || process.env.SISTER_PASSWORD || '').trim(),
+  },
+  person3: {
+    label: String(process.env.PERSON3_LABEL || 'داداش کوچیکه ۲').trim(),
+    password: String(process.env.PERSON3_PASSWORD || '').trim(),
+  },
+});
+const ROLE_ALIASES = Object.freeze({
+  me: 'person1',
+  little_brother: 'person1',
+  brother: 'person1',
+  sister: 'person2',
+  big_sister: 'person2',
+  guest: 'person3',
+  little_brother_2: 'person3',
+  brother2: 'person3',
+});
 const DATABASE_URL = String(process.env.DATABASE_URL || '').trim();
 const pool = new Pool({
   connectionString: DATABASE_URL || undefined,
@@ -107,17 +119,24 @@ async function touchDevice(deviceId) {
   await pool.query('UPDATE devices SET last_seen_at = now() WHERE id = $1', [deviceId]);
 }
 
-function validateRole(role) {
-  return role === 'me' || role === 'sister' || role === 'brother2' || role === 'guest';
+function canonicalRole(role) {
+  const value = String(role || '').trim().toLowerCase();
+  return ROLE_ALIASES[value] || (Object.prototype.hasOwnProperty.call(PERSONS, value) ? value : null);
 }
 
-function credentialsForRole(role) {
-  switch (role) {
-    case 'me': return { password: PERSON1_PASSWORD, label: PERSON1_LABEL };
-    case 'sister': return { password: PERSON2_PASSWORD, label: PERSON2_LABEL };
-    case 'brother2': return { password: PERSON3_PASSWORD, label: PERSON3_LABEL };
-    default: return { password: '', label: ANONYMOUS_LABEL };
-  }
+function validateRole(role) {
+  return Boolean(canonicalRole(role));
+}
+
+function getPerson(role) {
+  const canonical = canonicalRole(role);
+  return canonical ? PERSONS[canonical] : null;
+}
+
+function legacyAliasesFor(canonical) {
+  return Object.entries(ROLE_ALIASES)
+    .filter(([, target]) => target === canonical)
+    .map(([alias]) => alias);
 }
 
 function chooseNewer(localItem, remoteItem) {
@@ -178,136 +197,91 @@ async function ensureSharedRoom() {
 }
 
 async function ensureAccount(roomId, role, password, label) {
-  if (!password) throw new Error(`${role.toUpperCase()}_PASSWORD must be set`);
+  const canonical = canonicalRole(role);
+  if (!canonical) throw new Error('invalid_role');
+  if (!password) throw new Error(`${canonical.toUpperCase()}_PASSWORD must be set`);
+
   const hash = await bcrypt.hash(password, 12);
   await pool.query(
     `INSERT INTO accounts(room_id, role, password_hash) VALUES ($1,$2,$3)
      ON CONFLICT(room_id, role) DO UPDATE SET password_hash=EXCLUDED.password_hash, updated_at=now()`,
-    [roomId, role, hash],
+    [roomId, canonical, hash],
   );
-  let device = await pool.query('SELECT id, room_id, role, label FROM devices WHERE room_id = $1 AND role = $2 LIMIT 1', [roomId, role]);
+
+  const aliases = legacyAliasesFor(canonical);
+  const roleCandidates = [canonical, ...aliases];
+  let device = await pool.query(
+    'SELECT id, room_id, role, label FROM devices WHERE room_id = $1 AND role = ANY($2::text[]) ORDER BY CASE WHEN role = $3 THEN 0 ELSE 1 END, created_at LIMIT 1',
+    [roomId, roleCandidates, canonical],
+  );
+
   if (!device.rows[0]) {
     device = await pool.query(
       'INSERT INTO devices(room_id, role, label) VALUES ($1,$2,$3) RETURNING id, room_id, role, label',
-      [roomId, role, label],
+      [roomId, canonical, label],
     );
-  } else if (device.rows[0].label !== label) {
-    await pool.query('UPDATE devices SET label = $2 WHERE id = $1', [device.rows[0].id, label]);
-    device.rows[0].label = label;
+  } else {
+    const current = device.rows[0];
+    if (current.role !== canonical) {
+      await pool.query('UPDATE devices SET role = $2, label = $3 WHERE id = $1', [current.id, canonical, label]);
+      current.role = canonical;
+    } else if (current.label !== label) {
+      await pool.query('UPDATE devices SET label = $2 WHERE id = $1', [current.id, label]);
+    }
+    current.label = label;
   }
   return device.rows[0];
 }
 
 app.post('/api/auth/login', async (req, res) => {
-  const requestedRole = req.body?.role == null ? null : String(req.body.role);
-  const password = String(req.body?.password || '');
-  if ((requestedRole != null && (!validateRole(requestedRole) || requestedRole === 'guest')) || password.length < 4) {
+  const requestedRoleRaw = req.body?.role == null ? null : String(req.body.role);
+  const requestedRole = requestedRoleRaw == null ? null : canonicalRole(requestedRoleRaw);
+  const password = String(req.body?.password || '').trim();
+
+  if ((requestedRoleRaw != null && !requestedRole) || password.length < 4) {
     return res.status(400).json({ error: 'invalid_login' });
   }
+
   try {
     const room = await ensureSharedRoom();
     let role = requestedRole;
+
     if (!role) {
-      const matches = [
-        ['me', PERSON1_PASSWORD],
-        ['sister', PERSON2_PASSWORD],
-        ['brother2', PERSON3_PASSWORD],
-      ].filter(([, expectedPassword]) => Boolean(expectedPassword) && password === expectedPassword);
+      const matches = Object.entries(PERSONS)
+        .filter(([, person]) => person.password && person.password === password)
+        .map(([key]) => key);
+
       if (matches.length !== 1) {
-        return res.status(401).json({ error: matches.length > 1 ? 'duplicate_passwords' : 'invalid_login' });
+        return res.status(401).json({
+          error: matches.length > 1 ? 'duplicate_passwords' : 'invalid_login',
+        });
       }
-      role = matches[0][0];
+      role = matches[0];
     }
-    const credentials = credentialsForRole(role);
-    const label = credentials.label;
-    const expected = credentials.password;
-    if (!expected || password !== expected) {
+
+    const person = PERSONS[role];
+    if (!person?.password || password !== person.password) {
       return res.status(401).json({ error: 'invalid_login' });
     }
-    const device = await ensureAccount(room.id, role, expected, label);
+
+    const device = await ensureAccount(room.id, role, person.password, person.label);
     return res.json({
       token: signToken(device),
       roomId: room.id,
       deviceId: device.id,
       role,
-      label,
+      label: person.label,
     });
   } catch (e) {
-    if (String(e.message).includes('PASSWORD must be set')) return res.status(500).json({ error: 'server_credentials_missing' });
+    if (String(e.message).includes('PASSWORD must be set')) {
+      return res.status(500).json({ error: 'server_credentials_missing' });
+    }
     return res.status(500).json({ error: 'login_failed' });
   }
 });
 
-
-app.post('/api/auth/anonymous', async (req, res) => {
-  const role = String(req.body?.role || '').trim();
-  const clientKey = String(req.body?.clientKey || '').trim().slice(0, 128);
-  if (!validateRole(role) || clientKey.length < 12) {
-    return res.status(400).json({ error: 'invalid_anonymous_login' });
-  }
-  try {
-    const room = await ensureSharedRoom();
-    let deviceResult = await pool.query(
-      'SELECT id, room_id, role, label FROM devices WHERE room_id = $1 AND client_key = $2 LIMIT 1',
-      [room.id, clientKey],
-    );
-    let device = deviceResult.rows[0];
-    if (!device) {
-      deviceResult = await pool.query(
-        'SELECT id, room_id, role, label FROM devices WHERE room_id = $1 AND role = $2 LIMIT 1',
-        [room.id, role],
-      );
-      device = deviceResult.rows[0];
-    }
-
-    if (device) {
-      // The named roles are stable identities. The anonymous role is a single slot.
-      if (device.role !== role && role === 'guest') {
-        return res.status(409).json({ error: 'role_taken' });
-      }
-      if (device.role === 'guest') {
-        const bound = await pool.query(
-          'SELECT client_key FROM devices WHERE id = $1',
-          [device.id],
-        );
-        const existingKey = bound.rows[0]?.client_key;
-        if (existingKey && existingKey !== clientKey) {
-          return res.status(409).json({ error: 'role_taken' });
-        }
-        if (!existingKey) {
-          await pool.query('UPDATE devices SET client_key = $2 WHERE id = $1', [device.id, clientKey]);
-        }
-        if (device.label !== ANONYMOUS_LABEL) {
-          await pool.query('UPDATE devices SET label = $2 WHERE id = $1', [device.id, ANONYMOUS_LABEL]);
-          device.label = ANONYMOUS_LABEL;
-        }
-      }
-    } else {
-      const members = await pool.query('SELECT COUNT(*)::int AS count FROM devices WHERE room_id = $1', [room.id]);
-      if (Number(members.rows[0]?.count || 0) >= 3) {
-        return res.status(409).json({ error: 'room_full' });
-      }
-      const label = role === 'guest' ? ANONYMOUS_LABEL : (role === 'me' ? LITTLE_BROTHER_LABEL : BIG_SISTER_LABEL);
-      const created = await pool.query(
-        'INSERT INTO devices (room_id, role, label, client_key) VALUES ($1, $2, $3, $4) RETURNING id, room_id, role, label',
-        [room.id, role, label, clientKey],
-      );
-      device = created.rows[0];
-    }
-
-    return res.json({
-      token: signToken(device),
-      roomId: room.id,
-      deviceId: device.id,
-      role: device.role,
-      label: device.label,
-    });
-  } catch (e) {
-    if (String(e.message).includes('client_key') || String(e.code) === '23505') {
-      return res.status(409).json({ error: 'role_taken' });
-    }
-    return res.status(500).json({ error: 'anonymous_login_failed' });
-  }
+app.post('/api/auth/anonymous', async (_req, res) => {
+  return res.status(403).json({ error: 'password_required', message: 'ورود به دفتر مشترک فقط با رمز انجام می‌شود.' });
 });
 
 app.get('/', (_req, res) => res.json({ service: 'big-sister-sync', health: '/api/health' }));
@@ -317,20 +291,13 @@ app.get('/api/health', async (_req, res) => {
     return res.status(503).json({
       ok: false,
       service: 'big-sister-sync',
-      build: '3-person-password-v2',
       status: 'starting',
       error: dbInitError || 'database_not_ready',
     });
   }
   try {
     await pool.query('SELECT 1');
-    return res.json({
-      ok: true,
-      service: 'big-sister-sync',
-      build: '3-person-password-v2',
-      roles: ['person1', 'sister', 'person3'],
-      time: new Date().toISOString(),
-    });
+    return res.json({ ok: true, service: 'big-sister-sync', build: '3-person-password-v4', roles: Object.keys(PERSONS), time: new Date().toISOString() });
   } catch (e) {
     dbReady = false;
     dbInitError = 'database_unavailable';
@@ -343,7 +310,9 @@ app.post('/api/pair/create', async (req, res) => {
   if (!validateRole(role)) return res.status(400).json({ error: 'invalid_role' });
   const code = randomCode(8);
   const pairPin = randomPin();
-  const label = credentialsForRole(role).label;
+  const canonical = canonicalRole(role);
+  if (!canonical) return res.status(400).json({ error: 'invalid_role' });
+  const label = getPerson(canonical)?.label || 'عضو';
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -353,7 +322,7 @@ app.post('/api/pair/create', async (req, res) => {
     );
     const device = await client.query(
       'INSERT INTO devices (room_id, role, label) VALUES ($1, $2, $3) RETURNING id, room_id, role, label',
-      [room.rows[0].id, role, label],
+      [room.rows[0].id, canonical, label],
     );
     await client.query(
       'INSERT INTO room_snapshots (room_id, payload, revision, updated_by) VALUES ($1, $2, 0, $3)',
@@ -364,7 +333,7 @@ app.post('/api/pair/create', async (req, res) => {
       token: signToken(device.rows[0]),
       roomId: room.rows[0].id,
       deviceId: device.rows[0].id,
-      role,
+      role: canonical,
       label,
       code,
       pairPin,
@@ -380,31 +349,40 @@ app.post('/api/pair/create', async (req, res) => {
 app.post('/api/pair/join', async (req, res) => {
   const code = String(req.body?.code || '').trim().toUpperCase();
   const pairPin = String(req.body?.pairPin || '').trim();
-  const requestedRole = String(req.body?.role || '');
-  if (!code || !/^\d{6}$/.test(pairPin) || !validateRole(requestedRole)) {
+  const requestedRole = canonicalRole(req.body?.role || '');
+  if (!code || !/^\d{6}$/.test(pairPin) || !requestedRole) {
     return res.status(400).json({ error: 'invalid_pairing' });
   }
+
   const { rows } = await pool.query('SELECT * FROM rooms WHERE code = $1', [code]);
   const room = rows[0];
   if (!room) return res.status(404).json({ error: 'room_not_found' });
   if (Date.now() - Date.parse(room.created_at) > ROOM_CODE_TTL_HOURS * 3600 * 1000) {
     return res.status(410).json({ error: 'pairing_expired' });
   }
-  const ok = pairPin === room.pair_pin;
-  if (!ok) return res.status(403).json({ error: 'wrong_pair_pin' });
+  if (pairPin !== room.pair_pin) return res.status(403).json({ error: 'wrong_pair_pin' });
+
   const members = await pool.query('SELECT id, role, label FROM devices WHERE room_id = $1', [room.id]);
-  if (members.rowCount >= 3) return res.status(409).json({ error: 'room_full' });
-  if (members.rows.some(d => d.role === requestedRole)) return res.status(409).json({ error: 'role_taken' });
-  const label = requestedRole === 'guest' ? ANONYMOUS_LABEL : (requestedRole === 'me' ? LITTLE_BROTHER_LABEL : BIG_SISTER_LABEL);
+  const canonicalMembers = new Set(members.rows.map((d) => canonicalRole(d.role)).filter(Boolean));
+  if (canonicalMembers.size >= 3) return res.status(409).json({ error: 'room_full' });
+  if (canonicalMembers.has(requestedRole)) return res.status(409).json({ error: 'role_taken' });
+
+  const label = getPerson(requestedRole)?.label || 'عضو';
   const device = await pool.query(
     'INSERT INTO devices (room_id, role, label) VALUES ($1, $2, $3) RETURNING id, room_id, role, label',
     [room.id, requestedRole, label],
   );
+
   await pool.query('UPDATE rooms SET updated_at = now() WHERE id = $1', [room.id]);
   io.to(`room:${room.id}`).emit('pair:completed', { label });
   return res.json({
-    token: signToken(device.rows[0]), roomId: room.id, deviceId: device.rows[0].id,
-    role: requestedRole, label, code, pairPin,
+    token: signToken(device.rows[0]),
+    roomId: room.id,
+    deviceId: device.rows[0].id,
+    role: requestedRole,
+    label,
+    code,
+    pairPin,
   });
 });
 
@@ -924,27 +902,19 @@ server.listen(PORT, '0.0.0.0', () => {
 });
 
 async function initDb() {
-  if (!DATABASE_URL) {
-    throw new Error('DATABASE_URL is missing');
+  if (!DATABASE_URL) throw new Error('DATABASE_URL is missing');
+  for (const [role, person] of Object.entries(PERSONS)) {
+    if (!person.password) throw new Error(`${role.toUpperCase()}_PASSWORD is missing`);
   }
-  if (!PERSON1_PASSWORD) {
-    throw new Error('PERSON1_PASSWORD is missing');
-  }
-  if (!PERSON2_PASSWORD) {
-    throw new Error('PERSON2_PASSWORD is missing');
-  }
-  if (!PERSON3_PASSWORD) {
-    throw new Error('PERSON3_PASSWORD is missing');
-  }
-  if (!JWT_SECRET) {
-    throw new Error('JWT_SECRET is missing');
-  }
+  if (!JWT_SECRET) throw new Error('JWT_SECRET is missing');
+
   const sql = await fs.readFile(new URL('../schema.sql', import.meta.url), 'utf8');
   await pool.query(sql);
+
   const room = await ensureSharedRoom();
-  await ensureAccount(room.id, 'me', PERSON1_PASSWORD, PERSON1_LABEL);
-  await ensureAccount(room.id, 'sister', PERSON2_PASSWORD, PERSON2_LABEL);
-  await ensureAccount(room.id, 'brother2', PERSON3_PASSWORD, PERSON3_LABEL);
+  for (const [role, person] of Object.entries(PERSONS)) {
+    await ensureAccount(room.id, role, person.password, person.label);
+  }
 }
 
 async function initDbWithRetry() {
