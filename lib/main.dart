@@ -2618,8 +2618,12 @@ class _SettingsTabState extends State<SettingsTab> {
                       contentPadding: EdgeInsets.zero,
                       activeColor: c.secondary,
                       secondary: Icon(Icons.favorite_rounded, color: c.secondary, size: 20),
-                      title: Text(need),
-                      trailing: Text('${needCounts[need] ?? 0}', style: const TextStyle(color: Colors.white38)),
+                      title: Row(
+                        children: [
+                          Expanded(child: Text(need)),
+                          Text('${needCounts[need] ?? 0}', style: const TextStyle(color: Colors.white38)),
+                        ],
+                      ),
                     ),
                   ),
                 ],
@@ -3270,7 +3274,7 @@ class _MemoryMatchGameState extends State<_MemoryMatchGame> {
     Icons.headphones_rounded,
     Icons.coffee_rounded,
     Icons.local_florist_rounded,
-    Icons.sunny_rounded,
+    Icons.wb_sunny_rounded,
   ];
   final Set<String> _recentBoards = <String>{};
   late List<int> cards;

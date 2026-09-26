@@ -1,3 +1,5 @@
+// ignore_for_file: unused_field
+
 import 'dart:async';
 import 'dart:io';
 
@@ -70,11 +72,47 @@ class _ChatScreenState extends State<ChatScreen> {
       final type = data['type']?.toString();
       setState(() {
         if (type == 'reaction') {
-          messages[index] = ChatMessage(id: old.id, senderId: old.senderId, type: old.type, body: old.body, createdAt: old.createdAt, attachmentId: old.attachmentId, attachmentName: old.attachmentName, replyTo: old.replyTo, reaction: data['reaction']?.toString(), deliveredAt: old.deliveredAt, readAt: old.readAt);
+          messages[index] = ChatMessage(
+            id: old.id,
+            senderId: old.senderId,
+            type: old.type,
+            body: old.body,
+            createdAt: old.createdAt,
+            attachmentId: old.attachmentId,
+            attachmentName: old.attachmentName,
+            replyTo: old.replyTo,
+            reaction: data['reaction']?.toString(),
+            deliveredAt: old.deliveredAt,
+            readAt: old.readAt,
+          );
         } else if (type == 'read') {
-          messages[index] = ChatMessage(id: old.id, senderId: old.senderId, type: old.type, body: old.body, createdAt: old.createdAt, attachmentId: old.attachmentId, attachmentName: old.attachmentName, replyTo: old.replyTo, reaction: old.reaction, deliveredAt: old.deliveredAt, readAt: old.readAt ?? DateTime.now());
+          messages[index] = ChatMessage(
+            id: old.id,
+            senderId: old.senderId,
+            type: old.type,
+            body: old.body,
+            createdAt: old.createdAt,
+            attachmentId: old.attachmentId,
+            attachmentName: old.attachmentName,
+            replyTo: old.replyTo,
+            reaction: old.reaction,
+            deliveredAt: old.deliveredAt,
+            readAt: old.readAt ?? DateTime.now(),
+          );
         } else if (type == 'delivered') {
-          messages[index] = ChatMessage(id: old.id, senderId: old.senderId, type: old.type, body: old.body, createdAt: old.createdAt, attachmentId: old.attachmentId, attachmentName: old.attachmentName, replyTo: old.replyTo, reaction: old.reaction, deliveredAt: old.deliveredAt ?? DateTime.now(), readAt: old.readAt);
+          messages[index] = ChatMessage(
+            id: old.id,
+            senderId: old.senderId,
+            type: old.type,
+            body: old.body,
+            createdAt: old.createdAt,
+            attachmentId: old.attachmentId,
+            attachmentName: old.attachmentName,
+            replyTo: old.replyTo,
+            reaction: old.reaction,
+            deliveredAt: old.deliveredAt ?? DateTime.now(),
+            readAt: old.readAt,
+          );
         }
       });
     });
@@ -172,7 +210,11 @@ class _ChatScreenState extends State<ChatScreen> {
       if (!scroll.hasClients) return;
       final target = scroll.position.maxScrollExtent + 140;
       if (animated) {
-        scroll.animateTo(target, duration: const Duration(milliseconds: 260), curve: Curves.easeOutCubic);
+        scroll.animateTo(
+          target,
+          duration: const Duration(milliseconds: 260),
+          curve: Curves.easeOutCubic,
+        );
       } else {
         scroll.jumpTo(target);
       }
@@ -182,7 +224,10 @@ class _ChatScreenState extends State<ChatScreen> {
   void _onTextChanged(String value) {
     cloud.setTyping(value.trim().isNotEmpty);
     typingTimer?.cancel();
-    typingTimer = Timer(const Duration(milliseconds: 900), () => cloud.setTyping(false));
+    typingTimer = Timer(
+      const Duration(milliseconds: 900),
+      () => cloud.setTyping(false),
+    );
   }
 
   bool get selecting => selectedIds.isNotEmpty;
@@ -210,7 +255,9 @@ class _ChatScreenState extends State<ChatScreen> {
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('حذف پیام‌ها'),
-        content: Text('تعداد ${ids.length} پیام انتخاب شده حذف شود؟ این حذف برای اعضای دفتر اعمال می‌شود.'),
+        content: Text(
+          'تعداد ${ids.length} پیام انتخاب شده حذف شود؟ این حذف برای اعضای دفتر اعمال می‌شود.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -247,9 +294,9 @@ class _ChatScreenState extends State<ChatScreen> {
     });
 
     if (failed.isNotEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${failed.length} پیام حذف نشد.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('${failed.length} پیام حذف نشد.')));
     }
   }
 
@@ -283,7 +330,11 @@ class _ChatScreenState extends State<ChatScreen> {
         messages.removeWhere((m) => m.id == id);
         composer.text = text;
       });
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ارسال انجام نشد؛ اتصال دفتر مشترک را بررسی کن.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('ارسال انجام نشد؛ اتصال دفتر مشترک را بررسی کن.'),
+        ),
+      );
     }
   }
 
@@ -295,7 +346,10 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> sendImage() async {
-    final x = await picker.pickImage(source: ImageSource.gallery, imageQuality: 88);
+    final x = await picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 88,
+    );
     if (x == null) return;
     await _sendFile(x.path, 'image');
   }
@@ -314,11 +368,15 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
     if (!await recorder.hasPermission()) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('مجوز میکروفون لازم است.')));
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('مجوز میکروفون لازم است.')),
+        );
       return;
     }
     final temp = await getTemporaryDirectory();
-    final path = '${temp.path}/chat_${DateTime.now().microsecondsSinceEpoch}.m4a';
+    final path =
+        '${temp.path}/chat_${DateTime.now().microsecondsSinceEpoch}.m4a';
     await recorder.start(const RecordConfig(), path: path);
     if (mounted) setState(() => recording = true);
   }
@@ -341,13 +399,24 @@ class _ChatScreenState extends State<ChatScreen> {
     });
     _scrollToBottom();
     try {
-      final msg = await cloud.sendAttachment(path: path, kind: kind, replyTo: replyId, id: id);
+      final msg = await cloud.sendAttachment(
+        path: path,
+        kind: kind,
+        replyTo: replyId,
+        id: id,
+      );
       _replaceMessage(msg);
       _scrollToBottom();
     } catch (_) {
       if (mounted) {
         setState(() => messages.removeWhere((m) => m.id == id));
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('فایل ارسال نشد. حجم فایل و اتصال دفتر مشترک را بررسی کن.')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'فایل ارسال نشد. حجم فایل و اتصال دفتر مشترک را بررسی کن.',
+            ),
+          ),
+        );
       }
     } finally {
       try {
@@ -370,12 +439,16 @@ class _ChatScreenState extends State<ChatScreen> {
       final file = File('${dir.path}/chat_${message.id}.m4a');
       await file.writeAsBytes(bytes, flush: true);
       await player.play(DeviceFileSource(file.path));
-      if (mounted) setState(() {
-        playing = true;
-        playingId = message.id;
-      });
+      if (mounted)
+        setState(() {
+          playing = true;
+          playingId = message.id;
+        });
     } catch (_) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('پخش صدای پیام ممکن نیست.')));
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('پخش صدای پیام ممکن نیست.')),
+        );
     }
   }
 
@@ -408,9 +481,17 @@ class _ChatScreenState extends State<ChatScreen> {
               children: [
                 Icon(Icons.forum_rounded, color: c.primary, size: 64),
                 const SizedBox(height: 16),
-                const Text('چت هنوز متصل نشده است', textAlign: TextAlign.center, style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900)),
+                const Text(
+                  'چت هنوز متصل نشده است',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900),
+                ),
                 const SizedBox(height: 8),
-                const Text('از تنظیمات، یک‌بار وارد دفتر مشترک شو؛ بعد از آن چت خودکار همگام می‌شود.', textAlign: TextAlign.center, style: TextStyle(color: Colors.white60)),
+                const Text(
+                  'از تنظیمات، یک‌بار وارد دفتر مشترک شو؛ بعد از آن چت خودکار همگام می‌شود.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white60),
+                ),
               ],
             ),
           ),
@@ -441,18 +522,36 @@ class _ChatScreenState extends State<ChatScreen> {
                     Container(
                       width: 42,
                       height: 42,
-                      decoration: BoxDecoration(shape: BoxShape.circle, color: c.primary.withValues(alpha: .12)),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: c.primary.withValues(alpha: .12),
+                      ),
                       padding: const EdgeInsets.all(5),
-                      child: ClipOval(child: Image.asset('assets/logo.png', fit: BoxFit.cover)),
+                      child: ClipOval(
+                        child: Image.asset(
+                          'assets/logo.png',
+                          fit: BoxFit.cover,
+                        ),
+                      ),
                     ),
                     const SizedBox(width: 10),
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(cloud.otherDisplayName, style: const TextStyle(fontWeight: FontWeight.w900)),
                         Text(
-                          otherTyping ? 'در حال نوشتن…' : (otherOnline ? 'آنلاین' : 'آفلاین'),
-                          style: TextStyle(fontSize: 11, color: otherTyping || otherOnline ? c.primary : Colors.white54),
+                          cloud.otherDisplayName,
+                          style: const TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                        Text(
+                          otherTyping
+                              ? 'در حال نوشتن…'
+                              : (otherOnline ? 'آنلاین' : 'آفلاین'),
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: otherTyping || otherOnline
+                                ? c.primary
+                                : Colors.white54,
+                          ),
                         ),
                       ],
                     ),
@@ -478,10 +577,16 @@ class _ChatScreenState extends State<ChatScreen> {
                       itemCount: messages.length,
                       itemBuilder: (_, i) {
                         final message = messages[i];
-                        final showDay = i == 0 || !_sameDay(message.createdAt, messages[i - 1].createdAt);
+                        final showDay =
+                            i == 0 ||
+                            !_sameDay(
+                              message.createdAt,
+                              messages[i - 1].createdAt,
+                            );
                         return Column(
                           children: [
-                            if (showDay) _daySeparator(message.createdAt, c.primary),
+                            if (showDay)
+                              _daySeparator(message.createdAt, c.primary),
                             _bubble(message, c),
                           ],
                         );
@@ -506,8 +611,8 @@ class _ChatScreenState extends State<ChatScreen> {
     final label = _sameDay(date, now)
         ? 'امروز'
         : _sameDay(date, now.subtract(const Duration(days: 1)))
-            ? 'دیروز'
-            : PersianDate.date(date);
+        ? 'دیروز'
+        : PersianDate.date(date);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: Container(
@@ -517,15 +622,26 @@ class _ChatScreenState extends State<ChatScreen> {
           borderRadius: BorderRadius.circular(30),
           border: Border.all(color: accent.withValues(alpha: .12)),
         ),
-        child: Text(label, style: TextStyle(color: accent, fontSize: 11, fontWeight: FontWeight.w800)),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: accent,
+            fontSize: 11,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
       ),
     );
   }
 
   Widget _bubble(ChatMessage message, ThemeColors c) {
     final mine = message.senderId == myDeviceId;
-    final bg = mine ? c.primary.withValues(alpha: .18) : const Color(0xFF0A111C);
-    final border = mine ? c.primary.withValues(alpha: .22) : Colors.white.withValues(alpha: .05);
+    final bg = mine
+        ? c.primary.withValues(alpha: .18)
+        : const Color(0xFF0A111C);
+    final border = mine
+        ? c.primary.withValues(alpha: .22)
+        : Colors.white.withValues(alpha: .05);
     final selected = selectedIds.contains(message.id);
     return Align(
       alignment: mine ? Alignment.centerLeft : Alignment.centerRight,
@@ -534,145 +650,175 @@ class _ChatScreenState extends State<ChatScreen> {
         onTap: selecting ? () => _toggleSelection(message) : null,
         onDoubleTap: selecting
             ? null
-            : () => cloud.react(
-                  message.id,
-                  message.reaction == '❤️' ? '' : '❤️',
-                ),
+            : () =>
+                  cloud.react(message.id, message.reaction == '❤️' ? '' : '❤️'),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 160),
           decoration: selected
               ? BoxDecoration(
                   borderRadius: BorderRadius.circular(25),
-                  border: Border.all(color: c.primary.withValues(alpha: .7), width: 2),
+                  border: Border.all(
+                    color: c.primary.withValues(alpha: .7),
+                    width: 2,
+                  ),
                 )
               : null,
           padding: selected ? const EdgeInsets.all(2) : EdgeInsets.zero,
           child: Container(
-          constraints: const BoxConstraints(maxWidth: 340),
-          margin: const EdgeInsets.symmetric(vertical: 5),
-          padding: const EdgeInsets.fromLTRB(13, 10, 13, 8),
-          decoration: BoxDecoration(
-            color: bg,
-            borderRadius: BorderRadius.only(
-              topLeft: const Radius.circular(22),
-              topRight: const Radius.circular(22),
-              bottomLeft: Radius.circular(mine ? 22 : 7),
-              bottomRight: Radius.circular(mine ? 7 : 22),
+            constraints: const BoxConstraints(maxWidth: 340),
+            margin: const EdgeInsets.symmetric(vertical: 5),
+            padding: const EdgeInsets.fromLTRB(13, 10, 13, 8),
+            decoration: BoxDecoration(
+              color: bg,
+              borderRadius: BorderRadius.only(
+                topLeft: const Radius.circular(22),
+                topRight: const Radius.circular(22),
+                bottomLeft: Radius.circular(mine ? 22 : 7),
+                bottomRight: Radius.circular(mine ? 7 : 22),
+              ),
+              border: Border.all(color: border),
             ),
-            border: Border.all(color: border),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (message.type == 'image' && message.attachmentId != null)
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
-                  child: Image.network(
-                    cloud.mediaUrl(message.attachmentId!),
-                    headers: token == null ? null : {'Authorization': 'Bearer $token'},
-                    height: 220,
-                    width: 300,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
-                      height: 180,
-                      color: Colors.black12,
-                      alignment: Alignment.center,
-                      child: const Icon(Icons.broken_image_rounded),
-                    ),
-                  ),
-                ),
-              if (message.type == 'video' && message.attachmentId != null)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: _RemoteVideoBubble(
-                    key: ValueKey('video-${message.id}'),
-                    url: cloud.mediaUrl(message.attachmentId!),
-                    headers: token == null ? const {} : {'Authorization': 'Bearer $token'},
-                  ),
-                ),
-              if ((message.type == 'image' || message.type == 'video' || message.type == 'audio' || message.type == 'file') && !message.hasAttachment)
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(message.type == 'video' ? 'در حال ارسال ویدیو…' : message.type == 'image' ? 'در حال ارسال عکس…' : message.type == 'audio' ? 'در حال ارسال صدا…' : 'در حال ارسال فایل…'),
-                  ],
-                ),
-              if (message.type == 'file' && message.attachmentId != null)
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.attach_file_rounded, color: c.primary, size: 30),
-                    const SizedBox(width: 8),
-                    Flexible(child: Text(message.attachmentName ?? 'فایل پیوست شده')),
-                    IconButton(
-                      tooltip: 'ذخیره فایل',
-                      onPressed: () => saveRemoteFile(message),
-                      icon: Icon(Icons.download_rounded, color: c.primary),
-                    ),
-                  ],
-                ),
-              if (message.type == 'audio')
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      onPressed: () => playRemoteAudio(message),
-                      icon: Icon(
-                        playingId == message.id && playing
-                            ? Icons.pause_circle_filled_rounded
-                            : Icons.play_circle_fill_rounded,
-                        color: c.primary,
-                        size: 38,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (message.type == 'image' && message.attachmentId != null)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: Image.network(
+                      cloud.mediaUrl(message.attachmentId!),
+                      headers: token == null
+                          ? null
+                          : {'Authorization': 'Bearer $token'},
+                      height: 220,
+                      width: 300,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                        height: 180,
+                        color: Colors.black12,
+                        alignment: Alignment.center,
+                        child: const Icon(Icons.broken_image_rounded),
                       ),
                     ),
-                    const Text('پیام صوتی'),
+                  ),
+                if (message.type == 'video' && message.attachmentId != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: _RemoteVideoBubble(
+                      key: ValueKey('video-${message.id}'),
+                      url: cloud.mediaUrl(message.attachmentId!),
+                      headers: token == null
+                          ? const {}
+                          : {'Authorization': 'Bearer $token'},
+                    ),
+                  ),
+                if ((message.type == 'image' ||
+                        message.type == 'video' ||
+                        message.type == 'audio' ||
+                        message.type == 'file') &&
+                    !message.hasAttachment)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        message.type == 'video'
+                            ? 'در حال ارسال ویدیو…'
+                            : message.type == 'image'
+                            ? 'در حال ارسال عکس…'
+                            : message.type == 'audio'
+                            ? 'در حال ارسال صدا…'
+                            : 'در حال ارسال فایل…',
+                      ),
+                    ],
+                  ),
+                if (message.type == 'file' && message.attachmentId != null)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.attach_file_rounded,
+                        color: c.primary,
+                        size: 30,
+                      ),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(message.attachmentName ?? 'فایل پیوست شده'),
+                      ),
+                      IconButton(
+                        tooltip: 'ذخیره فایل',
+                        onPressed: () => saveRemoteFile(message),
+                        icon: Icon(Icons.download_rounded, color: c.primary),
+                      ),
+                    ],
+                  ),
+                if (message.type == 'audio')
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        onPressed: () => playRemoteAudio(message),
+                        icon: Icon(
+                          playingId == message.id && playing
+                              ? Icons.pause_circle_filled_rounded
+                              : Icons.play_circle_fill_rounded,
+                          color: c.primary,
+                          size: 38,
+                        ),
+                      ),
+                      const Text('پیام صوتی'),
+                    ],
+                  ),
+                if (message.replyTo != null)
+                  _replyPreviewForMessage(message.replyTo!, c),
+                if (message.body.isNotEmpty) ...[
+                  if (message.type != 'text') const SizedBox(height: 5),
+                  Text(
+                    message.body,
+                    style: const TextStyle(fontSize: 16.5, height: 1.55),
+                  ),
+                ],
+                const SizedBox(height: 3),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _time(message.createdAt),
+                      style: const TextStyle(
+                        fontSize: 10,
+                        color: Colors.white54,
+                      ),
+                    ),
+                    if (mine) ...[
+                      const SizedBox(width: 6),
+                      Icon(
+                        message.isRead
+                            ? Icons.done_all_rounded
+                            : message.isDelivered
+                            ? Icons.done_all_rounded
+                            : Icons.done_rounded,
+                        size: 14,
+                        color: message.isRead ? c.primary : Colors.white54,
+                      ),
+                    ],
+                    if (message.reaction != null &&
+                        message.reaction!.isNotEmpty) ...[
+                      const SizedBox(width: 5),
+                      Text(
+                        message.reaction!,
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                    ],
                   ],
-                ),
-              if (message.replyTo != null)
-                _replyPreviewForMessage(message.replyTo!, c),
-              if (message.body.isNotEmpty) ...[
-                if (message.type != 'text') const SizedBox(height: 5),
-                Text(
-                  message.body,
-                  style: const TextStyle(fontSize: 16.5, height: 1.55),
                 ),
               ],
-              const SizedBox(height: 3),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    _time(message.createdAt),
-                    style: const TextStyle(fontSize: 10, color: Colors.white54),
-                  ),
-                  if (mine) ...[
-                    const SizedBox(width: 6),
-                    Icon(
-                      message.isRead
-                          ? Icons.done_all_rounded
-                          : message.isDelivered
-                              ? Icons.done_all_rounded
-                              : Icons.done_rounded,
-                      size: 14,
-                      color: message.isRead ? c.primary : Colors.white54,
-                    ),
-                  ],
-                  if (message.reaction != null && message.reaction!.isNotEmpty) ...[
-                    const SizedBox(width: 5),
-                    Text(message.reaction!, style: const TextStyle(fontSize: 13)),
-                  ],
-                ],
-              ),
-            ],
+            ),
           ),
         ),
-      ),
       ),
     );
   }
@@ -689,8 +835,14 @@ class _ChatScreenState extends State<ChatScreen> {
     final text = target == null
         ? 'پیام حذف شده'
         : target.body.trim().isEmpty
-            ? (target.type == 'audio' ? 'پیام صوتی' : target.type == 'video' ? 'ویدیو' : target.type == 'image' ? 'عکس' : 'فایل')
-            : target.body.trim();
+        ? (target.type == 'audio'
+              ? 'پیام صوتی'
+              : target.type == 'video'
+              ? 'ویدیو'
+              : target.type == 'image'
+              ? 'عکس'
+              : 'فایل')
+        : target.body.trim();
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 7),
@@ -704,7 +856,11 @@ class _ChatScreenState extends State<ChatScreen> {
         text.length > 100 ? '${text.substring(0, 100)}…' : text,
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
-        style: TextStyle(color: c.primary, fontSize: 12, fontWeight: FontWeight.w700),
+        style: TextStyle(
+          color: c.primary,
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }
@@ -713,7 +869,13 @@ class _ChatScreenState extends State<ChatScreen> {
     final target = replyingTo;
     if (target == null) return const SizedBox.shrink();
     final text = target.body.trim().isEmpty
-        ? (target.type == 'audio' ? 'پیام صوتی' : target.type == 'video' ? 'ویدیو' : target.type == 'image' ? 'عکس' : 'فایل')
+        ? (target.type == 'audio'
+              ? 'پیام صوتی'
+              : target.type == 'video'
+              ? 'ویدیو'
+              : target.type == 'image'
+              ? 'عکس'
+              : 'فایل')
         : target.body.trim();
     return Container(
       margin: const EdgeInsets.only(bottom: 7),
@@ -727,7 +889,9 @@ class _ChatScreenState extends State<ChatScreen> {
         children: [
           Icon(Icons.reply_rounded, color: c.primary, size: 20),
           const SizedBox(width: 7),
-          Expanded(child: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis)),
+          Expanded(
+            child: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
           IconButton(
             tooltip: 'لغو پاسخ',
             onPressed: () => setState(() => replyingTo = null),
@@ -801,9 +965,9 @@ class _ChatScreenState extends State<ChatScreen> {
       }
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('دریافت فایل انجام نشد.')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('دریافت فایل انجام نشد.')));
       }
     }
   }
@@ -825,7 +989,11 @@ class _ChatScreenState extends State<ChatScreen> {
                 IconButton(
                   tooltip: 'پیوست',
                   onPressed: _showAttachmentSheet,
-                  icon: Icon(Icons.attach_file_rounded, color: c.secondary, size: 27),
+                  icon: Icon(
+                    Icons.attach_file_rounded,
+                    color: c.secondary,
+                    size: 27,
+                  ),
                 ),
                 Expanded(
                   child: TextField(
@@ -853,11 +1021,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 IconButton(
                   tooltip: 'فرستادن پیام',
                   onPressed: sendText,
-                  icon: Icon(
-                    Icons.send_rounded,
-                    color: c.primary,
-                    size: 30,
-                  ),
+                  icon: Icon(Icons.send_rounded, color: c.primary, size: 30),
                 ),
               ],
             ),
@@ -907,9 +1071,12 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 }
 
-
 class _RemoteVideoBubble extends StatefulWidget {
-  const _RemoteVideoBubble({super.key, required this.url, required this.headers});
+  const _RemoteVideoBubble({
+    super.key,
+    required this.url,
+    required this.headers,
+  });
   final String url;
   final Map<String, String> headers;
 
@@ -929,11 +1096,14 @@ class _RemoteVideoBubbleState extends State<_RemoteVideoBubble> {
       Uri.parse(widget.url),
       httpHeaders: widget.headers,
     );
-    controller.initialize().then((_) {
-      if (mounted) setState(() => ready = true);
-    }).catchError((_) {
-      if (mounted) setState(() => failed = true);
-    });
+    controller
+        .initialize()
+        .then((_) {
+          if (mounted) setState(() => ready = true);
+        })
+        .catchError((_) {
+          if (mounted) setState(() => failed = true);
+        });
   }
 
   @override
@@ -981,14 +1151,23 @@ class _RemoteVideoBubbleState extends State<_RemoteVideoBubble> {
           alignment: Alignment.center,
           children: [
             AspectRatio(
-              aspectRatio: controller.value.aspectRatio == 0 ? 16 / 9 : controller.value.aspectRatio,
+              aspectRatio: controller.value.aspectRatio == 0
+                  ? 16 / 9
+                  : controller.value.aspectRatio,
               child: VideoPlayer(controller),
             ),
             if (!controller.value.isPlaying)
               Container(
-                decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.black54),
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.black54,
+                ),
                 padding: const EdgeInsets.all(12),
-                child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 38),
+                child: const Icon(
+                  Icons.play_arrow_rounded,
+                  color: Colors.white,
+                  size: 38,
+                ),
               ),
           ],
         ),

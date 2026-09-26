@@ -1,3 +1,5 @@
+// ignore_for_file: unused_element
+
 import 'package:flutter/material.dart';
 
 import '../cloud/cloud_service.dart';
@@ -127,7 +129,8 @@ class _CloudSharedLoginScreenState extends State<CloudSharedLoginScreen> {
             'assets/kalantar_background.jpg',
             fit: BoxFit.cover,
             filterQuality: FilterQuality.high,
-            errorBuilder: (_, __, ___) => const ColoredBox(color: Color(0xFF05070C)),
+            errorBuilder: (_, __, ___) =>
+                const ColoredBox(color: Color(0xFF05070C)),
           ),
           const ColoredBox(color: Color(0xB8000000)),
           ListView(
@@ -146,7 +149,10 @@ class _CloudSharedLoginScreenState extends State<CloudSharedLoginScreen> {
                     const SizedBox(height: 12),
                     const Text(
                       'دفتر مشترک',
-                      style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
                     const SizedBox(height: 8),
                     const Text(
@@ -240,10 +246,7 @@ class _CloudSharedLoginScreenState extends State<CloudSharedLoginScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       ),
       icon: Icon(Icons.favorite_rounded, color: color),
-      label: Text(
-        label,
-        style: const TextStyle(fontWeight: FontWeight.w800),
-      ),
+      label: Text(label, style: const TextStyle(fontWeight: FontWeight.w800)),
     );
   }
 }
