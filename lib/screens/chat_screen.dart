@@ -269,9 +269,9 @@ class _ChatScreenState extends State<ChatScreen> {
               children: [
                 Icon(Icons.forum_rounded, color: c.primary, size: 64),
                 const SizedBox(height: 16),
-                const Text('چت سه‌نفره هنوز متصل نشده است', textAlign: TextAlign.center, style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900)),
+                 const Text('چت مشترک هنوز متصل نشده است', textAlign: TextAlign.center, style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900)),
                 const SizedBox(height: 8),
-                const Text('از تنظیمات، یک‌بار وارد دفتر سه‌نفره شو؛ بعد از آن چت خودکار همگام می‌شود.', textAlign: TextAlign.center, style: TextStyle(color: Colors.white60)),
+                 const Text('از تنظیمات، یک‌بار وارد دفتر مشترک شو؛ بعد از آن چت خودکار همگام می‌شود.', textAlign: TextAlign.center, style: TextStyle(color: Colors.white60)),
               ],
             ),
           ),
@@ -298,7 +298,7 @@ class _ChatScreenState extends State<ChatScreen> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('چت مشترک سه‌نفره', style: TextStyle(fontWeight: FontWeight.w900)),
+                   const Text('چت مشترک', style: TextStyle(fontWeight: FontWeight.w900)),
                   Text(otherTyping ? 'در حال نوشتن…' : (otherOnline ? 'آنلاین' : 'آفلاین'), style: TextStyle(fontSize: 11, color: otherTyping || otherOnline ? c.primary : Colors.white54)),
                 ],
               ),

@@ -13,10 +13,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'cloud/chat_models.dart';
 import 'cloud/cloud_service.dart';
 
-const String kBackgroundAsset = 'assets/kalantar_bg.jpg';
+const String kBackgroundAsset = 'assets/cat_mask_bg.jpeg';
 const Color kPurple = Color(0xFF9A66FF);
 const Color kBlue = Color(0xFF25AFFF);
 const Color kRed = Color(0xFFFF3B62);
+const Color kInk = Color(0xFF03050A);
+const Color kPanel = Color(0xE5090C15);
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -28,35 +30,48 @@ Future<void> main() async {
 final ThemeData kTheme = ThemeData(
   brightness: Brightness.dark,
   useMaterial3: true,
-  scaffoldBackgroundColor: const Color(0xFF020306),
+  scaffoldBackgroundColor: kInk,
   colorScheme: const ColorScheme.dark(
     primary: kPurple,
     secondary: kBlue,
-    surface: Color(0xFF0A0B10),
+    surface: Color(0xFF0A0C14),
     error: kRed,
   ),
   inputDecorationTheme: const InputDecorationTheme(
     filled: true,
-    fillColor: Color(0xDD080910),
+    fillColor: Color(0xE6080A12),
     border: OutlineInputBorder(
-      borderRadius: BorderRadius.all(Radius.circular(18)),
+      borderRadius: BorderRadius.all(Radius.circular(16)),
       borderSide: BorderSide(color: Color(0x443F4250)),
     ),
     enabledBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.all(Radius.circular(18)),
+      borderRadius: BorderRadius.all(Radius.circular(16)),
       borderSide: BorderSide(color: Color(0x443F4250)),
     ),
     focusedBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.all(Radius.circular(18)),
+      borderRadius: BorderRadius.all(Radius.circular(16)),
       borderSide: BorderSide(color: kPurple, width: 1.5),
     ),
+    contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 15),
   ),
   navigationBarTheme: const NavigationBarThemeData(
-    backgroundColor: Color(0xF2080910),
+    backgroundColor: Color(0xF2070A12),
     indicatorColor: Color(0x339A66FF),
-    height: 72,
+    height: 70,
+    labelTextStyle: WidgetStatePropertyAll(TextStyle(fontSize: 10, fontWeight: FontWeight.w700)),
+    iconTheme: WidgetStatePropertyAll(IconThemeData(size: 21)),
   ),
   snackBarTheme: const SnackBarThemeData(behavior: SnackBarBehavior.floating),
+  filledButtonTheme: FilledButtonThemeData(
+    style: FilledButton.styleFrom(
+      backgroundColor: kPurple,
+      foregroundColor: Colors.white,
+      minimumSize: const Size.fromHeight(48),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      textStyle: const TextStyle(fontWeight: FontWeight.w800),
+    ),
+  ),
+  appBarTheme: const AppBarTheme(backgroundColor: Colors.transparent, surfaceTintColor: Colors.transparent, elevation: 0),
 );
 
 class KalantarApp extends StatelessWidget {
@@ -167,20 +182,21 @@ class Bg extends StatelessWidget {
         Image.asset(
           kBackgroundAsset,
           fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => Container(color: const Color(0xFF05060A)),
+          alignment: Alignment.topCenter,
+          errorBuilder: (_, __, ___) => const ColoredBox(color: kInk),
         ),
-        Container(color: const Color(0xC8000006)),
+        Container(color: const Color(0xC9000007)),
         Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: <Color>[
-                Color(0x22180A2F),
-                Color(0xA5020308),
-                Color(0xEF020306),
-              ],
-            ),
+          decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: <Color>[Color(0x70230D49), Color(0x86030D1D), Color(0xF004050A)])),
+        ),
+        const DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: RadialGradient(center: Alignment.topRight, radius: 1.05, colors: <Color>[Color(0x422D8CFF), Color(0x00000000)]),
+          ),
+        ),
+        const DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: RadialGradient(center: Alignment.bottomLeft, radius: .9, colors: <Color>[Color(0x3DFF174F), Color(0x00000000)]),
           ),
         ),
         SafeArea(child: child),
@@ -199,11 +215,11 @@ class Glass extends StatelessWidget {
     return Container(
       padding: padding,
       decoration: BoxDecoration(
-        color: const Color(0xD7090A11),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
+        color: kPanel,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.075)),
         boxShadow: const <BoxShadow>[
-          BoxShadow(color: Color(0x33000000), blurRadius: 24, offset: Offset(0, 10)),
+          BoxShadow(color: Color(0x44000000), blurRadius: 22, offset: Offset(0, 10)),
         ],
       ),
       child: child,
@@ -245,7 +261,7 @@ class SplashPage extends StatelessWidget {
             SizedBox(height: 18),
             Text('کلانتر', style: TextStyle(fontSize: 34, fontWeight: FontWeight.w900)),
             SizedBox(height: 6),
-            Text('سه نفر • یک فضای مشترک • هویت ناشناس', style: TextStyle(color: Colors.white54)),
+            Text('یادداشت‌های خصوصی • یک فضای مشترک', style: TextStyle(color: Colors.white54)),
             SizedBox(height: 24),
             SizedBox(width: 150, child: LinearProgressIndicator(minHeight: 4)),
           ],
@@ -264,15 +280,19 @@ class PageHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: <Widget>[
-        const Logo(size: 54),
-        const SizedBox(width: 12),
+        Container(
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(shape: BoxShape.circle, color: kBlue.withValues(alpha: .12), border: Border.all(color: kBlue.withValues(alpha: .28))),
+          child: const Logo(size: 48),
+        ),
+        const SizedBox(width: 10),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Text(title, style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w900)),
-              const SizedBox(height: 2),
-              Text(subtitle, style: const TextStyle(color: Colors.white54)),
+              Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 4),
+              Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white54, fontSize: 11.5)),
             ],
           ),
         ),
@@ -312,7 +332,7 @@ class _LoginPageState extends State<LoginPage> {
       return;
     }
     if (password.text.trim().length < 4) {
-      setState(() => error = 'رمز کلید ناشناس را وارد کن.');
+      setState(() => error = 'رمز کلید را وارد کن.');
       return;
     }
 
@@ -331,45 +351,48 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     final names = <String>['کلید A', 'کلید B', 'کلید C'];
+    final accents = <Color>[kRed, kBlue, kPurple];
     return Bg(
       child: Center(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(18),
+          padding: const EdgeInsets.fromLTRB(15, 18, 15, 24),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 520),
             child: Glass(
+              padding: const EdgeInsets.fromLTRB(14, 18, 14, 16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
-                  const Center(child: Logo(size: 108)),
-                  const SizedBox(height: 18),
-                  const Text('ورود ناشناس', textAlign: TextAlign.center, style: TextStyle(fontSize: 26, fontWeight: FontWeight.w900)),
-                  const SizedBox(height: 5),
-                  const Text('هر سه نفر به یک فضای مشترک وصل می‌شوند؛ در رابط کاربری نام و نقش واقعی نمایش داده نمی‌شود.', textAlign: TextAlign.center, style: TextStyle(color: Colors.white54, height: 1.5)),
+                  const Center(child: Logo(size: 104)),
+                  const SizedBox(height: 14),
+                  const Text('ورود به دفتر مشترک', textAlign: TextAlign.center, style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 6),
+                  const Text('کلید خودت را انتخاب کن و ادامه بده.', textAlign: TextAlign.center, style: TextStyle(color: Colors.white54, height: 1.5)),
                   const SizedBox(height: 18),
                   Row(
                     children: List<Widget>.generate(3, (int index) {
                       final id = 'person${index + 1}';
                       final selected = role == id;
+                      final accent = accents[index];
                       return Expanded(
                         child: Padding(
                           padding: EdgeInsets.only(left: index == 2 ? 0 : 6),
                           child: InkWell(
                             onTap: () => setState(() => role = id),
-                            borderRadius: BorderRadius.circular(18),
+                            borderRadius: BorderRadius.circular(16),
                             child: AnimatedContainer(
                               duration: const Duration(milliseconds: 180),
-                              padding: const EdgeInsets.symmetric(vertical: 13),
+                              padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 4),
                               decoration: BoxDecoration(
-                                color: selected ? const Color(0x339A66FF) : const Color(0x22101018),
-                                borderRadius: BorderRadius.circular(18),
-                                border: Border.all(color: selected ? kPurple : Colors.white12),
+                                color: selected ? accent.withValues(alpha: .15) : const Color(0x22101018),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: selected ? accent : Colors.white12, width: selected ? 1.4 : 1),
                               ),
                               child: Column(
                                 children: <Widget>[
-                                  Icon(Icons.shield_outlined, color: selected ? kPurple : Colors.grey),
+                                  Icon(Icons.shield_outlined, color: selected ? accent : Colors.grey, size: 20),
                                   const SizedBox(height: 5),
-                                  Text(names[index], style: TextStyle(fontWeight: FontWeight.w800, color: selected ? Colors.white : Colors.white70)),
+                                  Text(names[index], style: TextStyle(fontWeight: FontWeight.w800, color: selected ? Colors.white : Colors.white70, fontSize: 13)),
                                 ],
                               ),
                             ),
@@ -383,7 +406,7 @@ class _LoginPageState extends State<LoginPage> {
                     controller: password,
                     obscureText: true,
                     textDirection: TextDirection.ltr,
-                    decoration: const InputDecoration(labelText: 'رمز کلید ناشناس', prefixIcon: Icon(Icons.key)),
+                    decoration: const InputDecoration(labelText: 'رمز کلید', prefixIcon: Icon(Icons.key_rounded)),
                   ),
                   if (const String.fromEnvironment('KALANTAR_API_URL', defaultValue: '').isEmpty) ...<Widget>[
                     const SizedBox(height: 10),
@@ -391,7 +414,7 @@ class _LoginPageState extends State<LoginPage> {
                       controller: server,
                       textDirection: TextDirection.ltr,
                       keyboardType: TextInputType.url,
-                      decoration: const InputDecoration(labelText: 'آدرس سرور Railway', prefixIcon: Icon(Icons.dns_outlined)),
+                      decoration: const InputDecoration(labelText: 'آدرس سرور', prefixIcon: Icon(Icons.dns_outlined)),
                     ),
                   ],
                   const SizedBox(height: 14),
@@ -417,7 +440,7 @@ class _LoginPageState extends State<LoginPage> {
 String friendlyError(Object error) {
   final String text = error.toString();
   if (text.contains('invalid_login')) return 'رمز کلید ناشناس اشتباه است.';
-  if (text.contains('server_credentials_missing')) return 'رمزهای سه حساب روی Railway کامل نشده‌اند.';
+  if (text.contains('server_credentials_missing')) return 'رمزهای حساب روی Railway کامل نشده‌اند.';
   if (text.contains('connection') || text.contains('SocketException')) return 'ارتباط با Railway برقرار نشد.';
   return 'ورود انجام نشد؛ تنظیمات سرور را بررسی کن.';
 }
@@ -497,8 +520,67 @@ class _HomePageState extends State<HomePage> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(18, 12, 18, 110),
       children: <Widget>[
-        const PageHeader(title: 'کلانتر', subtitle: 'سه نفر • یک فضای مشترک • بدون نمایش هویت'),
+        const PageHeader(title: 'صبح بخیر داداش کوچیکه ❤️', subtitle: 'یادداشت‌های خصوصی و مشترک'),
         const SizedBox(height: 14),
+        Glass(
+          padding: const EdgeInsets.fromLTRB(16, 15, 16, 14),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(shape: BoxShape.circle, color: kBlue.withValues(alpha: .14)),
+                child: const Icon(Icons.auto_awesome, color: kBlue, size: 20),
+              ),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text('جمله امروز', style: TextStyle(fontWeight: FontWeight.w900, color: kBlue)),
+                    SizedBox(height: 7),
+                    Text('آرام‌آرام هم می‌شود به رویاهای بزرگ رسید.', style: TextStyle(fontSize: 16, height: 1.55, fontWeight: FontWeight.w700)),
+                    SizedBox(height: 7),
+                    Text('یک قدم کوچک هم مهم است.', style: TextStyle(color: Colors.white54, fontSize: 11.5)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: <Widget>[
+            Expanded(child: MetricCard(title: 'یادداشت', value: '${notes.length}', icon: Icons.sticky_note_2_outlined, color: kBlue)),
+            const SizedBox(width: 8),
+            const Expanded(child: MetricCard(title: 'حال خوب', value: '0', icon: Icons.favorite_rounded, color: kRed)),
+            const SizedBox(width: 8),
+            const Expanded(child: MetricCard(title: 'یادآوری', value: '0', icon: Icons.notifications_none_rounded, color: Color(0xFFFFC332))),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Glass(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+          child: Row(
+            children: <Widget>[
+              const Icon(Icons.favorite_border_rounded, color: kRed, size: 25),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text('پیام حال خوب', style: TextStyle(fontWeight: FontWeight.w900)),
+                    SizedBox(height: 4),
+                    Text('امروز برای خودت یک اتفاق خوب ثبت کن.', style: TextStyle(color: Colors.white70, fontSize: 12.5)),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_left_rounded, color: Colors.white.withValues(alpha: .45)),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
         Row(
           children: <Widget>[
             Expanded(child: QuickButton(title: 'حال من', icon: Icons.favorite, color: kRed, onTap: () => widget.onNavigate(2))),
@@ -559,14 +641,38 @@ class QuickButton extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(20),
       child: Glass(
-        padding: const EdgeInsets.symmetric(vertical: 13),
+        padding: const EdgeInsets.symmetric(vertical: 12),
         child: Column(
           children: <Widget>[
-            Icon(icon, color: color, size: 28),
-            const SizedBox(height: 7),
-            Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+            Icon(icon, color: color, size: 24),
+            const SizedBox(height: 6),
+            Text(title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 11.5)),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class MetricCard extends StatelessWidget {
+  const MetricCard({super.key, required this.title, required this.value, required this.icon, required this.color});
+  final String title;
+  final String value;
+  final IconData icon;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Glass(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+      child: Column(
+        children: <Widget>[
+          Icon(icon, color: color, size: 20),
+          const SizedBox(height: 6),
+          Text(value, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 2),
+          Text(title, style: const TextStyle(color: Colors.white54, fontSize: 10.5)),
+        ],
       ),
     );
   }
@@ -713,7 +819,7 @@ class _ChatPageState extends State<ChatPage> {
   Widget build(BuildContext context) {
     return Column(
       children: <Widget>[
-        const Padding(padding: EdgeInsets.fromLTRB(18, 12, 18, 8), child: PageHeader(title: 'چت مشترک', subtitle: 'پیام‌ها برای هر سه نفر • نمایش «ناشناس»')),
+        const Padding(padding: EdgeInsets.fromLTRB(18, 12, 18, 8), child: PageHeader(title: 'چت مشترک', subtitle: 'پیام‌ها در دفتر مشترک • نمایش «ناشناس»')),
         Expanded(
           child: loading
               ? const Center(child: CircularProgressIndicator())
@@ -956,7 +1062,7 @@ class _CheckInPageState extends State<CheckInPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              const Text('نمای مشترک سه نفر', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+              const Text('نمای مشترک', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
               const SizedBox(height: 8),
               ...moods.entries.map(
                 (MapEntry<String, String> entry) => SharedCountRow(label: entry.value, count: moodCounts[entry.key] ?? 0, icon: Icons.favorite, color: kRed),
@@ -1352,7 +1458,7 @@ class _SettingsPageState extends State<SettingsPage> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(18, 12, 18, 110),
       children: <Widget>[
-        const PageHeader(title: 'تنظیمات', subtitle: 'نسخه مستقل سه‌نفره کلانتر'),
+        const PageHeader(title: 'تنظیمات', subtitle: 'تنظیمات برنامه کلانتر'),
         const SizedBox(height: 14),
         Glass(
           child: Column(

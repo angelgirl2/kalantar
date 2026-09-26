@@ -5,8 +5,8 @@ enum AppThemeChoice { turquoise, sky, red, blue, purple, skyRose, emerald }
 
 AppThemeChoice themeForCloudRole(String? role) => switch (role) {
       'person1' => AppThemeChoice.purple,
-      'person2' => AppThemeChoice.skyRose,
-      'person3' => AppThemeChoice.emerald,
+      'person2' => AppThemeChoice.blue,
+      'person3' => AppThemeChoice.red,
       _ => AppThemeChoice.turquoise,
     };
 

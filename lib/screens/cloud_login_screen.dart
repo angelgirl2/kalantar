@@ -31,9 +31,9 @@ class _RoleInfo {
 }
 
 const _roles = <_RoleInfo>[
-  _RoleInfo(role: 'person1', title: 'حساب ۱', subtitle: 'تم بنفش', icon: Icons.person_rounded, theme: AppThemeChoice.purple),
-  _RoleInfo(role: 'person2', title: 'حساب ۲', subtitle: 'آبی آسمانی + صورتی', icon: Icons.favorite_rounded, theme: AppThemeChoice.skyRose),
-  _RoleInfo(role: 'person3', title: 'حساب ۳', subtitle: 'تم سبز زمردی', icon: Icons.auto_awesome_rounded, theme: AppThemeChoice.emerald),
+  _RoleInfo(role: 'person1', title: 'کلید A', subtitle: 'تم بنفش', icon: Icons.person_rounded, theme: AppThemeChoice.purple),
+  _RoleInfo(role: 'person2', title: 'کلید B', subtitle: 'تم آبی', icon: Icons.favorite_rounded, theme: AppThemeChoice.blue),
+  _RoleInfo(role: 'person3', title: 'کلید C', subtitle: 'تم قرمز', icon: Icons.auto_awesome_rounded, theme: AppThemeChoice.red),
 ];
 
 class _CloudSharedLoginScreenState extends State<CloudSharedLoginScreen> {
@@ -65,13 +65,13 @@ class _CloudSharedLoginScreenState extends State<CloudSharedLoginScreen> {
   String _errorText(Object error) {
     final raw = error.toString();
     if (raw.contains('invalid_login')) return 'رمز ورود این حساب اشتباه است.';
-    if (raw.contains('server_credentials_missing')) return 'حساب‌های سه‌نفره روی Railway کامل تنظیم نشده‌اند.';
+    if (raw.contains('server_credentials_missing')) return 'حساب‌ها روی Railway کامل تنظیم نشده‌اند.';
     return 'اتصال به Railway برقرار نشد. آدرس سرویس و اینترنت را بررسی کن.';
   }
 
   Future<bool> _prepareServer() async {
     if (server.text.trim().isEmpty) {
-      setState(() => status = 'آدرس Railway نسخه سه‌نفره را وارد کن.');
+      setState(() => status = 'آدرس Railway را وارد کن.');
       return false;
     }
     await cloud.setServerUrl(server.text.trim());
@@ -128,7 +128,7 @@ class _CloudSharedLoginScreenState extends State<CloudSharedLoginScreen> {
     return Scaffold(
       backgroundColor: AppPalette.page,
       appBar: AppBar(
-        title: const Text('دفتر مشترک سه‌نفره'),
+         title: const Text('دفتر مشترک'),
         backgroundColor: Colors.transparent,
       ),
       body: ListView(
@@ -145,10 +145,10 @@ class _CloudSharedLoginScreenState extends State<CloudSharedLoginScreen> {
               children: [
                 Icon(Icons.groups_3_rounded, color: c.primary, size: 54),
                 const SizedBox(height: 12),
-                const Text('۳ نفر ↔ یک دفتر مشترک', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
+                 const Text('یک دفتر مشترک', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
                 const SizedBox(height: 8),
                 const Text(
-                  'هر چیزی که هرکدام از سه نفر بنویسند، عکس یا صدا بگذارند یا در چت ارسال کنند، با یک حساب مشترک آنلاین بین هر سه گوشی همگام می‌شود.',
+                   'یادداشت‌ها، عکس‌ها، صداها و پیام‌های این دفتر بین دستگاه‌های متصل همگام می‌شوند.',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.white60, height: 1.6),
                 ),
@@ -160,8 +160,8 @@ class _CloudSharedLoginScreenState extends State<CloudSharedLoginScreen> {
             controller: server,
             keyboardType: TextInputType.url,
             decoration: const InputDecoration(
-              labelText: 'آدرس Railway سه‌نفره',
-              hintText: 'https://YOUR-3-PERSON-RAILWAY.up.railway.app',
+               labelText: 'آدرس Railway',
+               hintText: 'https://YOUR-RAILWAY.up.railway.app',
               prefixIcon: Icon(Icons.dns_rounded),
             ),
           ),
@@ -220,11 +220,11 @@ class _CloudSharedLoginScreenState extends State<CloudSharedLoginScreen> {
           FilledButton.icon(
             onPressed: busy ? null : login,
             icon: const Icon(Icons.login_rounded),
-            label: const Text('ورود و اتصال به دفتر سه‌نفره'),
+             label: const Text('ورود و اتصال به دفتر'),
           ),
           const SizedBox(height: 10),
           Text(
-            'بعد از اولین ورود، حساب و تم همین دستگاه ذخیره می‌شود و دفتر مشترک هنگام اجرای برنامه همگام خواهد شد.',
+             'بعد از اولین ورود، حساب و تم همین دستگاه ذخیره می‌شود و دفتر هنگام اجرای برنامه همگام خواهد شد.',
             textAlign: TextAlign.center,
             style: TextStyle(color: Colors.white.withValues(alpha: .58), height: 1.55),
           ),
