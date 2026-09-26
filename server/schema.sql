@@ -13,12 +13,18 @@ CREATE TABLE IF NOT EXISTS rooms (
 CREATE TABLE IF NOT EXISTS devices (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   room_id UUID NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
-  role VARCHAR(16) NOT NULL CHECK (role IN ('person1','person2','person3')),
+  role VARCHAR(16) NOT NULL CHECK (role IN ('me','sister','guest')),
   label VARCHAR(32) NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE(room_id, role)
 );
+
+ALTER TABLE devices DROP CONSTRAINT IF EXISTS devices_role_check;
+ALTER TABLE devices ADD CONSTRAINT devices_role_check CHECK (role IN ('me','sister','guest'));
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS client_key VARCHAR(128);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_devices_client_key ON devices(client_key) WHERE client_key IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS room_snapshots (
   room_id UUID PRIMARY KEY REFERENCES rooms(id) ON DELETE CASCADE,
@@ -43,14 +49,16 @@ CREATE TABLE IF NOT EXISTS messages (
   read_at TIMESTAMPTZ
 );
 
-CREATE INDEX IF NOT EXISTS idx_messages_room_created
-ON messages(room_id, created_at DESC);
+ALTER TABLE messages DROP CONSTRAINT IF EXISTS messages_type_check;
+ALTER TABLE messages ADD CONSTRAINT messages_type_check CHECK (type IN ('text','image','video','audio','file'));
+
+CREATE INDEX IF NOT EXISTS idx_messages_room_created ON messages(room_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS media (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   room_id UUID NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
   uploader_id UUID NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
-  kind VARCHAR(16) NOT NULL CHECK (kind IN ('image','audio','file')),
+  kind VARCHAR(16) NOT NULL CHECK (kind IN ('image','video','audio','file')),
   original_name TEXT NOT NULL,
   mime TEXT NOT NULL,
   bytes BIGINT NOT NULL,
@@ -58,51 +66,39 @@ CREATE TABLE IF NOT EXISTS media (
   content_hash TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE media DROP CONSTRAINT IF EXISTS media_kind_check;
+ALTER TABLE media ADD CONSTRAINT media_kind_check CHECK (kind IN ('image','video','audio','file'));
 
-CREATE INDEX IF NOT EXISTS idx_media_room
-ON media(room_id);
+CREATE INDEX IF NOT EXISTS idx_media_room ON media(room_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_media_room_hash ON media(room_id, content_hash) WHERE content_hash IS NOT NULL;
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_media_room_hash
-ON media(room_id, content_hash)
-WHERE content_hash IS NOT NULL;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS attachment_name TEXT;
+ALTER TABLE media ADD COLUMN IF NOT EXISTS content_hash TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_media_room_hash ON media(room_id, content_hash) WHERE content_hash IS NOT NULL;
 
-ALTER TABLE messages
-ADD COLUMN IF NOT EXISTS attachment_name TEXT;
-
-ALTER TABLE media
-ADD COLUMN IF NOT EXISTS content_hash TEXT;
 
 CREATE TABLE IF NOT EXISTS accounts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   room_id UUID NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
-  role VARCHAR(16) NOT NULL CHECK (role IN ('person1', 'person2', 'person3')),
+  role VARCHAR(16) NOT NULL CHECK (role IN ('me', 'sister')),
   password_hash TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE(room_id, role)
 );
 
--- Make the devices role constraint idempotent
-ALTER TABLE devices
-DROP CONSTRAINT IF EXISTS devices_role_check;
 
-ALTER TABLE devices
-DROP CONSTRAINT IF EXISTS devices_role_three_check;
+CREATE TABLE IF NOT EXISTS letters (
+  id UUID PRIMARY KEY,
+  room_id UUID NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+  sender_id UUID NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  read_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_letters_room_created ON letters(room_id, created_at ASC);
 
-ALTER TABLE devices
-ADD CONSTRAINT devices_role_three_check
-CHECK (role IN ('person1', 'person2', 'person3'));
-
--- Make the accounts role constraint idempotent
-ALTER TABLE accounts
-DROP CONSTRAINT IF EXISTS accounts_role_check;
-
-ALTER TABLE accounts
-DROP CONSTRAINT IF EXISTS accounts_role_three_check;
-
-ALTER TABLE accounts
-ADD CONSTRAINT accounts_role_three_check
-CHECK (role IN ('person1', 'person2', 'person3'));
 
 CREATE TABLE IF NOT EXISTS mood_checkins (
   room_id UUID NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
@@ -112,10 +108,20 @@ CREATE TABLE IF NOT EXISTS mood_checkins (
   PRIMARY KEY (room_id, device_id)
 );
 
+CREATE INDEX IF NOT EXISTS idx_mood_checkins_room ON mood_checkins(room_id);
+
 CREATE TABLE IF NOT EXISTS need_checkins (
   room_id UUID NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
   device_id UUID NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
   needs JSONB NOT NULL DEFAULT '[]',
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (room_id, device_id)
+);
+
+CREATE TABLE IF NOT EXISTS draw_choices (
+  room_id UUID NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+  device_id UUID NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  choice VARCHAR(8) NOT NULL CHECK (choice IN ('yes','no')),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (room_id, device_id)
 );

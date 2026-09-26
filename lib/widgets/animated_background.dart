@@ -16,7 +16,13 @@ class AnimatedBackground extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: [
-        const ColoredBox(color: Color(0xFF000000)),
+        Image.asset(
+          'assets/kalantar_background.jpg',
+          fit: BoxFit.cover,
+          filterQuality: FilterQuality.high,
+          errorBuilder: (_, __, ___) => const ColoredBox(color: Color(0xFF000000)),
+        ),
+        const ColoredBox(color: Color(0xB8000000)),
         IgnorePointer(
           child: CustomPaint(painter: _AmbientPainter(primary, secondary)),
         ),

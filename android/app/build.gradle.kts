@@ -7,11 +7,11 @@ plugins {
 }
 
 android {
-    namespace = "com.angelgirlbrand.threenotes"
+    namespace = "com.angelgirlbrand.kalantar"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.angelgirlbrand.threenotes"
+        applicationId = "com.angelgirlbrand.kalantar"
         minSdk = flutter.minSdkVersion
         targetSdk = 36
 

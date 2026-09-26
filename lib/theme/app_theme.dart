@@ -10,16 +10,33 @@ class ThemeColors {
 }
 
 ThemeColors colorsFor(AppThemeChoice choice) => switch (choice) {
-      AppThemeChoice.turquoise => const ThemeColors(primary: Color(0xFF19E0CE), secondary: Color(0xFF0A9FCE), accent: Color(0xFF8BFFFF), glow: Color(0xFF11DCC9)),
-      AppThemeChoice.sky => const ThemeColors(primary: Color(0xFF61C8FF), secondary: Color(0xFF4778FF), accent: Color(0xFFB9EAFF), glow: Color(0xFF61C8FF)),
-      AppThemeChoice.red => const ThemeColors(primary: Color(0xFFFF4D67), secondary: Color(0xFFB91F52), accent: Color(0xFFFFA0AB), glow: Color(0xFFFF4163)),
-      AppThemeChoice.blue => const ThemeColors(primary: Color(0xFF4E8CFF), secondary: Color(0xFF1E48D8), accent: Color(0xFFA6C8FF), glow: Color(0xFF508BFF)),
-      AppThemeChoice.purple => const ThemeColors(primary: Color(0xFFB36BFF), secondary: Color(0xFF6E3FD7), accent: Color(0xFFE0B8FF), glow: Color(0xFF9C5CFF)),
-      AppThemeChoice.skyRose => const ThemeColors(primary: Color(0xFF62CFFF), secondary: Color(0xFFFF7EB8), accent: Color(0xFFD8F6FF), glow: Color(0xFFFF92C2)),
-      AppThemeChoice.emerald => const ThemeColors(primary: Color(0xFF57E6A0), secondary: Color(0xFF159A73), accent: Color(0xFFB9FFD9), glow: Color(0xFF45D58F)),
+      AppThemeChoice.turquoise => const ThemeColors(
+          primary: Color(0xFF9A66FF),
+          secondary: Color(0xFF338DFF),
+          accent: Color(0xFFFF3F62),
+          glow: Color(0xFF8C52FF),
+        ),
+      AppThemeChoice.sky => const ThemeColors(
+          primary: Color(0xFF338DFF),
+          secondary: Color(0xFF9A66FF),
+          accent: Color(0xFFFF3F62),
+          glow: Color(0xFF338DFF),
+        ),
+      AppThemeChoice.red => const ThemeColors(
+          primary: Color(0xFFFF3F62),
+          secondary: Color(0xFF9A66FF),
+          accent: Color(0xFF338DFF),
+          glow: Color(0xFFFF3F62),
+        ),
+      AppThemeChoice.blue => const ThemeColors(
+          primary: Color(0xFF338DFF),
+          secondary: Color(0xFF9A66FF),
+          accent: Color(0xFFFF3F62),
+          glow: Color(0xFF338DFF),
+        ),
     };
 
-class AppPalette { static const page = Color(0xFF05070C); static const surface = Color(0xFF0A101A); static const surface2 = Color(0xFF0D1522); static const card = Color(0xFF0B121D); }
+class AppPalette { static const page = Color(0xB805070C); static const surface = Color(0xEE0A101A); static const surface2 = Color(0xF00D1522); static const card = Color(0xF20B121D); }
 
 ThemeData buildDarkTheme(AppThemeChoice choice) {
   final c = colorsFor(choice);
@@ -33,6 +50,7 @@ ThemeData buildDarkTheme(AppThemeChoice choice) {
       primary: c.primary,
       secondary: c.secondary,
       surface: AppPalette.surface,
+      error: const Color(0xFFFF3F62),
     ).copyWith(
       surfaceContainerLowest: AppPalette.page,
       surfaceContainerLow: AppPalette.surface,

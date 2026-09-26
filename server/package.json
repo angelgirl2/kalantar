@@ -1,11 +1,9 @@
 {
-  "name": "kalantar-three-person-server",
+  "name": "big-sister-sync-server",
   "private": true,
-  "version": "1.0.0",
+  "version": "6.2.0",
   "type": "module",
-  "engines": {
-    "node": ">=22"
-  },
+  "engines": { "node": ">=22" },
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js"

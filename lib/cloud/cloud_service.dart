@@ -1,199 +1,734 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../services/notification_service.dart';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 
+import '../services/storage_service.dart';
 import 'chat_models.dart';
 
 class CloudService {
   CloudService._();
   static final CloudService instance = CloudService._();
 
-  static const _urlKey = 'kalantar_cloud_url_v1';
-  static const _tokenKey = 'kalantar_cloud_token_v1';
-  static const _roleKey = 'kalantar_cloud_role_v1';
-  static const _deviceKey = 'kalantar_cloud_device_v1';
+  static const _railwayUrl = 'https://kalanntar-notes-production.up.railway.app';
+  static const _buildUrl = String.fromEnvironment('BIG_SISTER_API_URL', defaultValue: _railwayUrl);
+  static const _tokenKey = 'big_sister_cloud_token_v1';
+  static const _roomIdKey = 'big_sister_cloud_room_v1';
+  static const _deviceIdKey = 'big_sister_cloud_device_v1';
+  static const _roleKey = 'big_sister_cloud_role_v1';
+  static const _labelKey = 'big_sister_cloud_label_v1';
+  static const _clientKey = 'shared_cloud_client_key_v1';
 
-  final _secure = const FlutterSecureStorage();
-  final contentChanges = StreamController<void>.broadcast();
-  final incomingMessages = StreamController<ChatMessage>.broadcast();
-  final messageStatusChanges = StreamController<Map<String, dynamic>>.broadcast();
-  final connectionChanges = StreamController<bool>.broadcast();
-  final typingController = StreamController<bool>.broadcast();
-  final presenceController = StreamController<Map<String, dynamic>>.broadcast();
-
-  Stream<bool> get typingChanges => typingController.stream;
-  Stream<Map<String, dynamic>> get presenceChanges => presenceController.stream;
-
-  /// Returns the current JWT without the `Bearer ` prefix.
-  /// ChatScreen adds the HTTP Authorization prefix itself.
-  Future<String?> authHeaderToken() => _token();
-
-  /// Builds an absolute authenticated-media URL from a server-relative path.
-  String mediaUrl(String path) {
-    if (path.startsWith('http://') || path.startsWith('https://')) return path;
-    final base = (_baseUrl ?? '').replaceFirst(RegExp(r'/+$'), '');
-    final relative = path.startsWith('/') ? path : '/$path';
-    return '$base$relative';
-  }
-
-  /// Refreshes the cloud snapshot and announces that shared content may have changed.
-  Future<void> syncNow() async {
-    await init();
-    if (!configured) return;
-    await _request('GET', '/api/sync/snapshot');
-    contentChanges.add(null);
-  }
-
-  /// Pulls the latest cloud snapshot. The app's content listeners reload it from the API.
-  Future<void> pullAndApply() => syncNow();
-
-
+  final FlutterSecureStorage _secure = const FlutterSecureStorage();
+  final StreamController<void> _contentChanged = StreamController<void>.broadcast();
+  final StreamController<ChatMessage> _messages = StreamController<ChatMessage>.broadcast();
+  final StreamController<CloudLetter> _letters = StreamController<CloudLetter>.broadcast();
+  final StreamController<bool> _typing = StreamController<bool>.broadcast();
+  final StreamController<Map<String, dynamic>> _presence = StreamController<Map<String, dynamic>>.broadcast();
+  final StreamController<Map<String, dynamic>> _messageStatus = StreamController<Map<String, dynamic>>.broadcast();
+  final StreamController<String> _deletedMessages = StreamController<String>.broadcast();
+  final StreamController<bool> _connectionChanged = StreamController<bool>.broadcast();
   IO.Socket? _socket;
   Dio? _dio;
-  String? _baseUrl;
-  String? _role;
-  bool _online = false;
   bool _initialized = false;
+  bool _syncing = false;
+  bool _syncQueued = false;
+  bool _online = false;
+  String? _cachedDeviceId;
+  final Set<String> _knownChatMessageIds = <String>{};
+  bool _hasConnectedOnce = false;
 
+  Stream<void> get contentChanges => _contentChanged.stream;
+  Stream<ChatMessage> get incomingMessages => _messages.stream;
+  Stream<CloudLetter> get incomingLetters => _letters.stream;
+  Stream<bool> get typingChanges => _typing.stream;
+  Stream<Map<String, dynamic>> get presenceChanges => _presence.stream;
+  Stream<Map<String, dynamic>> get messageStatusChanges => _messageStatus.stream;
+  Stream<String> get deletedMessages => _deletedMessages.stream;
+  Stream<bool> get connectionChanges => _connectionChanged.stream;
   bool get online => _online;
-  bool get configured => (_baseUrl ?? '').trim().isNotEmpty && _role != null;
+
+  String? _baseUrl;
   String? get baseUrl => _baseUrl;
   String? get role => _role;
+  String? get label => _label;
+
+  /// نام این دستگاه بر اساس حسابی که با آن وارد شده است.
+  String get myDisplayName {
+    final value = _label?.trim();
+    if (value != null && value.isNotEmpty) return value;
+    if (_role == 'sister') return 'آبجی بزرگه';
+    if (_role == 'guest') return 'ناشناس';
+    return 'داداش کوچیکه';
+  }
+
+  /// نام همراه برای بخش‌های مشترک رابط؛ هرگز تعداد اعضا را نشان نمی‌دهد.
+  String get otherDisplayName {
+    if (_role == 'sister') return 'داداش کوچیکه';
+    if (_role == 'me') return 'آبجی بزرگه';
+    return 'دفتر مشترک';
+  }
+
+  String get sharedTitle {
+    if (_role == 'sister' || _role == 'me') return 'آبجی بزرگه ↔ داداش کوچیکه';
+    return 'دفتر مشترک';
+  }
+  String? _role;
+  String? _label;
+
+  Dio _makeDio(String url) => Dio(BaseOptions(
+        baseUrl: url,
+        connectTimeout: const Duration(seconds: 12),
+        receiveTimeout: const Duration(seconds: 30),
+        sendTimeout: const Duration(seconds: 180),
+        headers: {'Accept': 'application/json'},
+        validateStatus: (s) => s != null && s < 500,
+      ));
+
+  String _normalizeUrl(String url) {
+    var normalized = url.trim();
+    while (normalized.endsWith('/')) {
+      normalized = normalized.substring(0, normalized.length - 1);
+    }
+    return normalized;
+  }
 
   Future<void> init() async {
     if (_initialized) return;
     final prefs = await SharedPreferences.getInstance();
-    _baseUrl = prefs.getString(_urlKey) ?? (const String.fromEnvironment('KALANTAR_API_URL', defaultValue: '').trim().isEmpty ? null : const String.fromEnvironment('KALANTAR_API_URL', defaultValue: '').trim());
+    _baseUrl = _normalizeUrl(_buildUrl);
     _role = prefs.getString(_roleKey);
-    _dio = _makeDio(_baseUrl ?? '');
+    _label = prefs.getString(_labelKey);
+    _cachedDeviceId = await _secure.read(key: _deviceIdKey);
+    _dio = _makeDio(normalizedBaseUrl);
     _initialized = true;
-    if (configured) await _connectSocket();
+    if (configured) {
+      await _connectSocket();
+    }
   }
 
-  Dio _makeDio(String url) => Dio(BaseOptions(baseUrl: url, connectTimeout: const Duration(seconds: 12), receiveTimeout: const Duration(seconds: 40), sendTimeout: const Duration(seconds: 90), validateStatus: (s) => s != null && s < 500));
+  bool get configured => _baseUrl != null && _baseUrl!.trim().isNotEmpty && _role != null;
 
-  Future<void> setServerUrl(String url) async {
-    await init();
-    var v = url.trim(); while (v.endsWith('/')) v = v.substring(0, v.length - 1);
-    _baseUrl = v;
-    _dio = _makeDio(v);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_urlKey, v);
+  Future<String?> get token async => _secure.read(key: _tokenKey);
+  Future<String?> get roomId async => _secure.read(key: _roomIdKey);
+  Future<String?> get deviceId async => _secure.read(key: _deviceIdKey);
+
+  String get normalizedBaseUrl {
+    var url = (_baseUrl ?? '').trim();
+    while (url.endsWith('/')) url = url.substring(0, url.length - 1);
+    return url;
   }
 
-  Future<String?> _token() => _secure.read(key: _tokenKey);
-  Future<String?> get deviceId => _secure.read(key: _deviceKey);
+  Future<String> _clientKeyValue() async {
+    final existing = await _secure.read(key: _clientKey);
+    if (existing != null && existing.isNotEmpty) return existing;
+    final bytes = List<int>.generate(24, (i) => DateTime.now().microsecondsSinceEpoch.hashCode + i);
+    final value = bytes.map((b) => (b & 0xff).toRadixString(16).padLeft(2, '0')).join();
+    await _secure.write(key: _clientKey, value: value);
+    return value;
+  }
 
-
-  Future<void> login({required String role, required String password}) async {
+  Future<Map<String, dynamic>> loginAnonymous({required String role}) async {
     await init();
-    final r = await _dio!.post('/api/auth/login', data: {'role': role, 'password': password});
-    _ok(r);
-    final map = Map<String, dynamic>.from(r.data as Map);
-    await _secure.write(key: _tokenKey, value: map['token']?.toString());
-    await _secure.write(key: _deviceKey, value: map['deviceId']?.toString());
-    final prefs = await SharedPreferences.getInstance();
-    _role = role;
-    await prefs.setString(_roleKey, role);
+    if (_dio == null || normalizedBaseUrl.isEmpty) throw StateError('server_url_missing');
+    final allowed = {'me', 'sister', 'guest'};
+    if (!allowed.contains(role)) throw StateError('invalid_role');
+    final response = await _dio!.post(
+      '/api/auth/anonymous',
+      data: {'role': role, 'clientKey': await _clientKeyValue()},
+    );
+    _ensureOk(response);
+    await _saveSession(Map<String, dynamic>.from(response.data as Map));
     await _connectSocket();
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
+  Future<Map<String, dynamic>> login({required String password}) async {
+    await init();
+    if (_dio == null || normalizedBaseUrl.isEmpty) throw StateError('server_url_missing');
+    // Do not block login on a separate health request. Railway can briefly
+    // report a 503 while the app is already able to serve authenticated routes,
+    // and a DNS/health failure would otherwise hide the real login response.
+    final response = await _dio!.post('/api/auth/login', data: {
+      'password': password,
+    });
+    _ensureOk(response);
+    await _saveSession(response.data as Map<String, dynamic>);
+    await _connectSocket();
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
+  Future<void> _saveSession(Map<String, dynamic> data) async {
+    final prefs = await SharedPreferences.getInstance();
+    await _secure.write(key: _tokenKey, value: data['token']?.toString());
+    await _secure.write(key: _roomIdKey, value: data['roomId']?.toString());
+    _cachedDeviceId = data['deviceId']?.toString();
+    await _secure.write(key: _deviceIdKey, value: _cachedDeviceId);
+    _role = data['role']?.toString();
+    _label = data['label']?.toString();
+    if (_role != null) await prefs.setString(_roleKey, _role!);
+    if (_label != null) await prefs.setString(_labelKey, _label!);
   }
 
   Future<void> disconnect() async {
-    _socket?.dispose(); _socket = null; _online = false; connectionChanges.add(false);
+    _socket?.dispose();
+    _socket = null;
+    _online = false;
+    _connectionChanged.add(false);
+    _role = null;
+    _label = null;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_roleKey);
-    await _secure.delete(key: _tokenKey); await _secure.delete(key: _deviceKey);
-    _role = null;
+    await prefs.remove(_labelKey);
+    await _secure.delete(key: _tokenKey);
+    await _secure.delete(key: _roomIdKey);
+    _cachedDeviceId = null;
+    _knownChatMessageIds.clear();
+    _hasConnectedOnce = false;
+    await _secure.delete(key: _deviceIdKey);
   }
 
   Future<void> _connectSocket() async {
-    final t = await _token();
-    if (!configured || t == null || t.isEmpty) return;
+    if (!configured) return;
+    final t = await token;
+    if (t == null || t.isEmpty) return;
     _socket?.dispose();
-    _socket = IO.io(_baseUrl!, IO.OptionBuilder().setTransports(['websocket']).setAuth({'token': t}).enableAutoConnect().enableForceNew().build());
+    _socket = IO.io(
+      normalizedBaseUrl,
+      IO.OptionBuilder()
+          .setTransports(['websocket', 'polling'])
+          .setAuth({'token': t})
+          .disableAutoConnect()
+          .enableForceNew()
+          .enableReconnection()
+          .setReconnectionAttempts(-1)
+          .setReconnectionDelay(400)
+          .setReconnectionDelayMax(3000)
+          .build(),
+    );
     _socket!
-      ..onConnect((_) { _online = true; connectionChanges.add(true); })
-      ..onDisconnect((_) { _online = false; connectionChanges.add(false); })
-      ..onConnectError((_) { _online = false; connectionChanges.add(false); })
-      ..on('chat:message', (d) { if (d is Map) incomingMessages.add(ChatMessage.fromJson(Map<String, dynamic>.from(d))); })
-      ..on('chat:read', (d) { if (d is Map) messageStatusChanges.add({'type':'read', ...Map<String,dynamic>.from(d)}); })
-      ..on('chat:reaction', (d) {
-        if (d is Map) messageStatusChanges.add({'type': 'reaction', ...Map<String, dynamic>.from(d)});
-      })
-      ..on('chat:delivered', (d) {
-        if (d is Map) messageStatusChanges.add({'type': 'delivered', ...Map<String, dynamic>.from(d)});
-      })
-      ..on('typing', (d) {
-        if (d is Map) {
-          typingController.add(d['typing'] == true);
-        } else {
-          typingController.add(d == true);
+      ..onConnect((_) {
+        _online = true;
+        _connectionChanged.add(true);
+        if (_hasConnectedOnce) {
+          unawaited(_catchUpMessages());
         }
+        _hasConnectedOnce = true;
       })
-      ..on('presence', (d) {
-        if (d is Map) presenceController.add(Map<String, dynamic>.from(d));
+      ..onDisconnect((_) {
+        _online = false;
+        _connectionChanged.add(false);
       })
-      ..on('content:changed', (_) => contentChanges.add(null))
-      ..on('checkins:changed', (_) => contentChanges.add(null));
+      ..onConnectError((_) {
+        _online = false;
+        _connectionChanged.add(false);
+      })
+      ..on('content:changed', (_) => _contentChanged.add(null))
+      ..on('pair:completed', (_) => _contentChanged.add(null))
+      ..on('checkins:changed', (_) => _contentChanged.add(null))
+      ..on('chat:message', (data) {
+        try {
+          if (data is Map) {
+            final message = ChatMessage.fromJson(Map<String, dynamic>.from(data));
+            final isNew = _knownChatMessageIds.add(message.id);
+            _messages.add(message);
+            if (isNew && (_cachedDeviceId == null || message.senderId != _cachedDeviceId)) {
+              unawaited(NotificationService.instance.showIncomingChat(message));
+            }
+          }
+        } catch (_) {}
+      })
+      ..on('letter:new', (data) {
+        try {
+          if (data is Map) _letters.add(CloudLetter.fromJson(Map<String, dynamic>.from(data)));
+        } catch (_) {}
+      })
+      ..on('chat:read', (data) {
+        if (data is Map) _messageStatus.add({'type': 'read', ...Map<String, dynamic>.from(data)});
+      })
+      ..on('chat:delivered', (data) {
+        if (data is Map) _messageStatus.add({'type': 'delivered', ...Map<String, dynamic>.from(data)});
+      })
+      ..on('chat:reaction', (data) {
+        if (data is Map) _messageStatus.add({'type': 'reaction', ...Map<String, dynamic>.from(data)});
+      })
+      ..on('chat:deleted', (data) {
+        final id = data is Map ? data['id']?.toString() : data?.toString();
+        if (id != null && id.isNotEmpty) _deletedMessages.add(id);
+      })
+      ..on('typing', (data) {
+        if (data is Map) _typing.add(data['typing'] == true);
+      })
+      ..on('presence', (data) {
+        if (data is Map) _presence.add(Map<String, dynamic>.from(data));
+      })
+      ..on('presence:state', (data) {
+        if (data is Map) {
+          final devices = (data['deviceIds'] as List? ?? const []).whereType<String>();
+          for (final id in devices) {
+            _presence.add({'deviceId': id, 'online': true, 'at': DateTime.now().toUtc().toIso8601String()});
+          }
+        }
+      });
+    _socket!.connect();
   }
 
-  Future<Map<String, dynamic>> _request(String method, String path, {dynamic data, Map<String,dynamic>? query, ResponseType? responseType}) async {
-    final t = await _token(); if (t == null || t.isEmpty) throw StateError('not_connected');
-    final r = await _dio!.request(path, data: data, queryParameters: query, options: Options(method: method, headers: {'Authorization':'Bearer $t'}, responseType: responseType));
-    _ok(r); return Map<String,dynamic>.from(r.data as Map);
+  Future<String> _uploadNoteMedia(File file, String kind) async {
+    final t = await token;
+    if (t == null || t.isEmpty) throw StateError('Not connected');
+    final originalName = file.uri.pathSegments.last;
+    final bytes = await file.readAsBytes();
+    final digest = sha256.convert(bytes).toString();
+    final form = FormData.fromMap({
+      'kind': kind,
+      'sha256': digest,
+      'file': MultipartFile.fromBytes(bytes, filename: originalName),
+    });
+    final response = await _dio!.post(
+      '/api/sync/media',
+      data: form,
+      options: Options(headers: {'Authorization': 'Bearer $t'}),
+    );
+    _ensureOk(response);
+    final id = response.data['id']?.toString();
+    if (id == null || id.isEmpty) throw StateError('media_upload_failed');
+    final name = response.data['originalName']?.toString() ?? originalName;
+    return 'cloud-media://$id/${Uri.encodeComponent(name)}';
   }
 
-  Future<List<ChatMessage>> fetchMessages({int limit = 80}) async { final d = await _request('GET','/api/chat/messages', query: {'limit': limit}); final list = (d['messages'] as List? ?? const []); return list.map((e)=>ChatMessage.fromJson(Map<String,dynamic>.from(e))).toList(); }
-  Future<ChatMessage> sendText(String body) async { return _sendMessage(type:'text', body:body); }
-  Future<ChatMessage> _sendMessage({required String type, required String body, String? attachmentId, String? attachmentName}) async { final d = await _request('POST','/api/chat/messages', data: {'type':type,'body':body,'attachmentId':attachmentId,'attachmentName':attachmentName}); return ChatMessage.fromJson(Map<String,dynamic>.from(d['message'] as Map)); }
+  Future<Map<String, dynamic>> _prepareCloudSnapshot(StorageService storage) async {
+    final snapshot = await storage.exportCloudJson();
+    final rawNotes = (snapshot['notes'] as List?) ?? const [];
+    final cache = <String, String>{};
+    final notes = <Map<String, dynamic>>[];
 
-  Future<ChatMessage> sendAttachment({required String path, required String kind}) async {
-    final t = await _token(); if (t == null) throw StateError('not_connected');
-    final name = path.split(Platform.pathSeparator).last;
-    final form = FormData.fromMap({'kind':kind,'file':await MultipartFile.fromFile(path, filename:name)});
-    final up = await _dio!.post('/api/media', data: form, options: Options(headers: {'Authorization':'Bearer $t'})); _ok(up);
-    return _sendMessage(type: kind, body:'', attachmentId:up.data['id']?.toString(), attachmentName:up.data['originalName']?.toString() ?? name);
+    Future<String> preparePath(String path, String kind) async {
+      if (path.startsWith('cloud-media://')) return path;
+      final cached = cache[path];
+      if (cached != null) return cached;
+      final file = File(path);
+      if (!await file.exists()) return path;
+      final remoteRef = await _uploadNoteMedia(file, kind);
+      cache[path] = remoteRef;
+      await storage.rememberCloudMediaRef(path, remoteRef);
+      return remoteRef;
+    }
+
+    for (final raw in rawNotes) {
+      final data = Map<String, dynamic>.from(raw as Map);
+      final images = ((data['imagePaths'] as List?) ?? const []).whereType<String>().toList();
+      final mappedImages = <String>[];
+      for (final path in images) {
+        mappedImages.add(await preparePath(path, 'image'));
+      }
+      data['imagePaths'] = mappedImages;
+      data['imagePath'] = mappedImages.isEmpty ? null : mappedImages.first;
+      final audio = data['audioPath']?.toString();
+      if (audio != null && audio.isNotEmpty) {
+        data['audioPath'] = await preparePath(audio, 'audio');
+      }
+      notes.add(data);
+    }
+
+    return {
+      ...snapshot,
+      'notes': notes,
+    };
   }
 
-  Future<void> uploadSharedMedia({required String path, required String kind}) async {
-    final t = await _token(); if (t == null) throw StateError('not_connected');
-    final name = path.split(Platform.pathSeparator).last;
-    final form = FormData.fromMap({'kind':kind,'file':await MultipartFile.fromFile(path, filename:name)});
-    final r = await _dio!.post('/api/media', data: form, options: Options(headers: {'Authorization':'Bearer $t'})); _ok(r);
+  Future<List<int>?> _downloadNoteMedia(String remoteRef) async {
+    final t = await token;
+    if (t == null || t.isEmpty || !remoteRef.startsWith('cloud-media://')) return null;
+    final body = remoteRef.substring('cloud-media://'.length);
+    final id = body.split('/').first;
+    if (id.isEmpty) return null;
+    try {
+      final response = await _dio!.get<List<int>>(
+        '/api/media/$id',
+        options: Options(
+          responseType: ResponseType.bytes,
+          headers: {'Authorization': 'Bearer $t'},
+        ),
+      );
+      _ensureOk(response);
+      return response.data;
+    } catch (_) {
+      return null;
+    }
   }
 
-  Future<List<int>> downloadMediaBytes(String id) async {
-    final t = await _token(); if (t == null) throw StateError('not_connected');
-    final r = await _dio!.get<List<int>>('/api/media/$id', options: Options(responseType: ResponseType.bytes, headers: {'Authorization':'Bearer $t'})); _ok(r); return r.data ?? const <int>[];
+  Future<Map<String, dynamic>> syncNow(StorageService storage) async {
+    if (!configured) return {};
+    if (_syncing) {
+      _syncQueued = true;
+      return {};
+    }
+    _syncing = true;
+    try {
+      final snapshot = await _prepareCloudSnapshot(storage);
+      final t = await token;
+      if (t == null) return {};
+      final response = await _dio!.put(
+        '/api/sync/snapshot',
+        data: {'payload': snapshot},
+        options: Options(headers: {'Authorization': 'Bearer $t'}),
+      );
+      _ensureOk(response);
+      if (!_online) {
+        _online = true;
+        _connectionChanged.add(true);
+      }
+      final payload = Map<String, dynamic>.from(response.data['payload'] as Map);
+      await storage.applyCloudJson(payload, resolveMedia: _downloadNoteMedia);
+      return payload;
+    } catch (_) {
+      return {};
+    } finally {
+      _syncing = false;
+      if (_syncQueued) {
+        _syncQueued = false;
+        unawaited(syncNow(storage));
+      }
+    }
   }
 
-  Future<List<Map<String,dynamic>>> listMedia() async { final d = await _request('GET','/api/media'); return (d['media'] as List? ?? const []).map((e)=>Map<String,dynamic>.from(e as Map)).toList(); }
+  Future<Map<String, dynamic>> pullAndApply(StorageService storage) async {
+    if (!configured || _syncing) return {};
+    _syncing = true;
+    try {
+      final t = await token;
+      if (t == null) return {};
+      final response = await _dio!.get(
+        '/api/sync/snapshot',
+        options: Options(headers: {'Authorization': 'Bearer $t'}),
+      );
+      _ensureOk(response);
+      if (!_online) {
+        _online = true;
+        _connectionChanged.add(true);
+      }
+      final payload = Map<String, dynamic>.from(response.data['payload'] as Map);
+      await storage.applyCloudJson(payload, resolveMedia: _downloadNoteMedia);
+      return payload;
+    } catch (_) {
+      return {};
+    } finally {
+      _syncing = false;
+    }
+  }
 
-  Future<Map<String,dynamic>> fetchCheckins() async => _request('GET','/api/checkins');
-  Future<void> saveMood(String mood) async { await _request('POST','/api/checkins/mood', data: {'mood':mood}); }
-  Future<void> saveNeeds(List<String> needs) async { await _request('POST','/api/checkins/needs', data: {'needs':needs}); }
+  Future<List<CloudMember>> pairStatus() async {
+    if (!configured) return [];
+    final t = await token;
+    if (t == null) return [];
+    final response = await _dio!.get('/api/pair/status', options: Options(headers: {'Authorization': 'Bearer $t'}));
+    _ensureOk(response);
+    final list = (response.data['members'] as List? ?? const []);
+    return list.map((e) => CloudMember.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+  }
 
-  Future<List<Map<String,dynamic>>> fetchSharedNotes() async { final d = await _request('GET','/api/sync/snapshot'); final p = Map<String,dynamic>.from(d['payload'] as Map? ?? const {}); return (p['notes'] as List? ?? const []).map((e)=>Map<String,dynamic>.from(e as Map)).toList(); }
-  Future<void> saveSharedNotes(List<Map<String, dynamic>> notes) async {
-    await _request(
-      'PUT',
-      '/api/sync/snapshot',
-      data: {
-        'payload': {
-          'version': 4,
-          'notes': notes,
-          'deletedIds': [],
-        },
-      },
+  Future<ChatMessage> sendText(String body, {String? replyTo, String? id}) async {
+    final payload = <String, dynamic>{
+      'id': id ?? _uuidV4(),
+      'type': 'text',
+      'body': body,
+      'attachmentId': null,
+      'attachmentName': null,
+      'replyTo': replyTo,
+    };
+    final socket = _socket;
+    if (socket != null && _online) {
+      final result = await _emitWithAck('chat:send', payload);
+      if (result != null && result['error'] == null) {
+        return ChatMessage.fromJson(Map<String, dynamic>.from(result));
+      }
+    }
+    return _sendMessage(
+      type: 'text',
+      body: body,
+      replyTo: replyTo,
+      id: payload['id']?.toString(),
     );
   }
 
-  Future<void> markRead(String id) async { await _request('PATCH','/api/chat/messages/$id/read'); }
-  Future<void> react(String id,String reaction) async { await _request('PATCH','/api/chat/messages/$id/reaction', data:{'reaction':reaction}); }
+  Future<ChatMessage> sendAttachment({required String path, required String kind, String caption = '', String? replyTo, String? id}) async {
+    final t = await token;
+    if (t == null) throw StateError('Not connected');
+    final originalName = File(path).uri.pathSegments.last;
+    final form = FormData.fromMap({
+      'kind': kind,
+      'file': await MultipartFile.fromFile(path, filename: originalName),
+    });
+    final uploadResponse = await _dio!.post('/api/media', data: form, options: Options(headers: {'Authorization': 'Bearer $t'}));
+    _ensureOk(uploadResponse);
+    return _sendMessage(
+      type: kind,
+      body: caption,
+      attachmentId: uploadResponse.data['id']?.toString(),
+      attachmentName: uploadResponse.data['originalName']?.toString() ?? originalName,
+      replyTo: replyTo,
+      id: id,
+    );
+  }
+
+  Future<ChatMessage> _sendMessage({required String type, required String body, String? attachmentId, String? attachmentName, String? replyTo, String? id}) async {
+    final t = await token;
+    if (t == null) throw StateError('Not connected');
+    final response = await _dio!.post(
+      '/api/chat/messages',
+      data: {
+        'id': id ?? _uuidV4(),
+        'type': type,
+        'body': body,
+        'attachmentId': attachmentId,
+        'attachmentName': attachmentName,
+        'replyTo': replyTo,
+      },
+      options: Options(headers: {'Authorization': 'Bearer $t'}),
+    );
+    _ensureOk(response);
+    return ChatMessage.fromJson(Map<String, dynamic>.from(response.data['message'] as Map));
+  }
+
+  Future<Map<String, dynamic>?> _emitWithAck(String event, Map<String, dynamic> payload) async {
+    final socket = _socket;
+    if (socket == null || !_online) return null;
+    final completer = Completer<Map<String, dynamic>?>();
+    var completed = false;
+    void finish(Map<String, dynamic>? value) {
+      if (completed) return;
+      completed = true;
+      if (!completer.isCompleted) completer.complete(value);
+    }
+    try {
+      socket.emitWithAck(event, payload, ack: (data) {
+        if (data is Map) {
+          finish(Map<String, dynamic>.from(data));
+        } else {
+          finish(null);
+        }
+      });
+      Future<void>.delayed(const Duration(seconds: 8), () => finish(null));
+      return await completer.future;
+    } catch (_) {
+      finish(null);
+      return null;
+    }
+  }
+
+  String _uuidV4() {
+    final r = DateTime.now().microsecondsSinceEpoch.toRadixString(16);
+    final stamp = '${r}00000000000000000000000000000000';
+    return '${stamp.substring(0, 8)}-${stamp.substring(8, 12)}-4${stamp.substring(13, 16)}-a${stamp.substring(17, 20)}-${stamp.substring(20, 32)}';
+  }
+
+  Future<List<ChatMessage>> fetchMessages({DateTime? before, int limit = 50}) async {
+    final t = await token;
+    if (t == null) return [];
+    final response = await _dio!.get(
+      '/api/chat/messages',
+      queryParameters: {
+        'limit': limit,
+        if (before != null) 'before': before.toUtc().toIso8601String(),
+      },
+      options: Options(headers: {'Authorization': 'Bearer $t'}),
+    );
+    _ensureOk(response);
+    final list = response.data['messages'] as List? ?? const [];
+    final parsed = list.map((e) => ChatMessage.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+    _knownChatMessageIds.addAll(parsed.map((m) => m.id));
+    return parsed;
+  }
+
+  Future<void> _catchUpMessages() async {
+    try {
+      final knownBeforeFetch = Set<String>.of(_knownChatMessageIds);
+      final latest = await fetchMessages(limit: 100);
+      for (final message in latest) {
+        if (!knownBeforeFetch.contains(message.id)) {
+          // Reconnect catch-up repairs anything missed while offline. The normal
+          // socket event owns notifications, so old messages are not re-alerted.
+          _messages.add(message);
+        }
+      }
+    } catch (_) {}
+  }
+
+  Future<CloudLetter> sendLetter({required String title, required String body}) async {
+    final t = await token;
+    if (t == null || t.isEmpty) throw StateError('Not connected');
+    final response = await _dio!.post(
+      '/api/letters',
+      data: {'title': title.trim().isEmpty ? 'نامه' : title.trim(), 'body': body.trim()},
+      options: Options(headers: {'Authorization': 'Bearer $t'}),
+    );
+    _ensureOk(response);
+    return CloudLetter.fromJson(Map<String, dynamic>.from(response.data['letter'] as Map));
+  }
+
+  Future<List<CloudLetter>> fetchLetters({int limit = 100}) async {
+    final t = await token;
+    if (t == null || t.isEmpty) return [];
+    final response = await _dio!.get(
+      '/api/letters',
+      queryParameters: {'limit': limit},
+      options: Options(headers: {'Authorization': 'Bearer $t'}),
+    );
+    _ensureOk(response);
+    final list = response.data['letters'] as List? ?? const [];
+    return list.map((e) => CloudLetter.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+  }
+
+  Future<void> markLetterRead(String id) async {
+    final t = await token;
+    if (t == null || t.isEmpty) return;
+    await _dio!.patch('/api/letters/$id/read', options: Options(headers: {'Authorization': 'Bearer $t'}));
+  }
+
+  String mediaUrl(String id) => '$normalizedBaseUrl/api/media/$id';
+
+  Future<List<int>> downloadMediaBytes(String id) async {
+    final t = await token;
+    if (t == null) throw StateError('Not connected');
+    final response = await _dio!.get<List<int>>(
+      '/api/media/$id',
+      options: Options(
+        responseType: ResponseType.bytes,
+        headers: {'Authorization': 'Bearer $t'},
+      ),
+    );
+    _ensureOk(response);
+    return response.data ?? const <int>[];
+  }
+
+  Future<String?> authHeaderToken() => token;
+
+  Future<void> markRead(String id) async {
+    final t = await token;
+    if (t == null) return;
+    await _dio!.patch('/api/chat/messages/$id/read', options: Options(headers: {'Authorization': 'Bearer $t'}));
+    _socket?.emit('message:read', id);
+  }
+
+  Future<void> deleteMessage(String id) async {
+    final t = await token;
+    if (t == null || t.isEmpty) throw StateError('Not connected');
+    final response = await _dio!.delete(
+      '/api/chat/messages/$id',
+      options: Options(headers: {'Authorization': 'Bearer $t'}),
+    );
+    _ensureOk(response);
+  }
+
+  Future<void> react(String id, String reaction) async {
+    final t = await token;
+    if (t == null) return;
+    final response = await _dio!.patch(
+      '/api/chat/messages/$id/reaction',
+      data: {'reaction': reaction},
+      options: Options(headers: {'Authorization': 'Bearer $t'}),
+    );
+    _ensureOk(response);
+  }
+
   void setTyping(bool value) => _socket?.emit('typing', value);
-  void _ok(Response<dynamic> r) { if (r.statusCode == null || r.statusCode! >= 300) { final d=r.data; final e=d is Map ? d['error']?.toString() : null; throw StateError(e ?? 'request_failed'); } }
+
+  Future<Map<String, dynamic>> fetchCheckins() async {
+    if (!configured) return <String, dynamic>{};
+    final t = await token;
+    if (t == null || t.isEmpty) return <String, dynamic>{};
+    final response = await _dio!.get(
+      '/api/checkins',
+      options: Options(headers: {'Authorization': 'Bearer $t'}),
+    );
+    _ensureOk(response);
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
+  Future<void> saveMood(String mood) async {
+    final t = await token;
+    if (t == null || t.isEmpty) throw StateError('Not connected');
+    final response = await _dio!.post(
+      '/api/checkins/mood',
+      data: {'mood': mood},
+      options: Options(headers: {'Authorization': 'Bearer $t'}),
+    );
+    _ensureOk(response);
+  }
+
+  Future<void> saveNeeds(List<String> needs) async {
+    final t = await token;
+    if (t == null || t.isEmpty) throw StateError('Not connected');
+    final response = await _dio!.post(
+      '/api/checkins/needs',
+      data: {'needs': needs},
+      options: Options(headers: {'Authorization': 'Bearer $t'}),
+    );
+    _ensureOk(response);
+  }
+
+  Future<void> saveDrawChoice(String choice) async {
+    final t = await token;
+    if (t == null || t.isEmpty) throw StateError('Not connected');
+    final response = await _dio!.post(
+      '/api/checkins/draw',
+      data: {'choice': choice},
+      options: Options(headers: {'Authorization': 'Bearer $t'}),
+    );
+    _ensureOk(response);
+  }
+
+  Future<List<Map<String, dynamic>>> listMedia() async {
+    final t = await token;
+    if (t == null || t.isEmpty) return <Map<String, dynamic>>[];
+    final response = await _dio!.get(
+      '/api/media',
+      options: Options(headers: {'Authorization': 'Bearer $t'}),
+    );
+    _ensureOk(response);
+    final list = response.data['media'] as List? ?? const [];
+    return list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
+  Future<void> uploadSharedMedia({required String path, required String kind}) async {
+    final t = await token;
+    if (t == null || t.isEmpty) throw StateError('Not connected');
+    final name = File(path).uri.pathSegments.last;
+    final form = FormData.fromMap({
+      'kind': kind,
+      'file': await MultipartFile.fromFile(path, filename: name),
+    });
+    final response = await _dio!.post(
+      '/api/media',
+      data: form,
+      options: Options(headers: {'Authorization': 'Bearer $t'}),
+    );
+    _ensureOk(response);
+  }
+
+  void _ensureOk(Response<dynamic> response) {
+    if (response.statusCode == null || response.statusCode! >= 300) {
+      final data = response.data;
+      final error = data is Map ? data['error']?.toString() : null;
+      throw StateError(error ?? 'request_failed');
+    }
+  }
+
+  Future<void> dispose() async {
+    _socket?.dispose();
+    await _contentChanged.close();
+    await _messages.close();
+    await _letters.close();
+    await _typing.close();
+    await _presence.close();
+    await _messageStatus.close();
+    await _deletedMessages.close();
+    await _connectionChanged.close();
+  }
 }

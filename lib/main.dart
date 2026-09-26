@@ -1,167 +1,447 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 import 'dart:typed_data';
-
 import 'package:audioplayers/audioplayers.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
+import 'package:intl/date_symbol_data_local.dart';
+import 'package:local_auth/local_auth.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 import 'package:record/record.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:share_plus/share_plus.dart';
 
-import 'cloud/chat_models.dart';
+import 'models/app_models.dart';
 import 'cloud/cloud_service.dart';
+import 'cloud/chat_models.dart';
+import 'screens/chat_screen.dart';
+import 'screens/cloud_login_screen.dart';
+import 'screens/splash_screen.dart';
+import 'services/notification_service.dart';
+import 'services/storage_service.dart';
+import 'theme/app_theme.dart';
+import 'widgets/animated_background.dart';
 
-const String kBackgroundAsset = 'assets/cat_mask_bg.jpeg';
-const Color kPurple = Color(0xFF9A66FF);
-const Color kBlue = Color(0xFF25AFFF);
-const Color kRed = Color(0xFFFF3B62);
-const Color kInk = Color(0xFF03050A);
-const Color kPanel = Color(0xE5090C15);
+const quotes = <String>[
+  'تو از چیزی که فکر می‌کنی قوی‌تری؛ فقط گاهی یادت می‌رود.',
+  'هر روز لازم نیست عالی باشی؛ فقط یک قدم جلوتر برو.',
+  'آرام‌آرام هم می‌شود به رویاهای بزرگ رسید.',
+  'تو شایسته‌ی آرامش، احترام و تمام خوبی‌های دنیایی.',
+  'هیچ شب سختی برای همیشه نمی‌ماند؛ صبح بالاخره می‌رسد.',
+  'به خودت همان مهربانی را بده که به عزیزانت می‌دهی.',
+  'اشتباه کردن بخشی از مسیر است، نه پایان مسیر.',
+  'تو برای درخشیدن ساخته شده‌ای، حتی در روزهای ابری.',
+  'گاهی استراحت کردن هم یک شکل از پیشرفت است.',
+  'یک روز معمولی هم می‌تواند شروع یک اتفاق فوق‌العاده باشد.',
+  'به قلبت اعتماد کن؛ تو خیلی بیشتر از چیزی که فکر می‌کنی می‌دانی.',
+  'هیچ‌کس شبیه تو نیست؛ همین تو را خاص می‌کند.',
+  'قدرت تو همیشه در بی‌نقص بودن نیست؛ در دوباره بلند شدن است.',
+  'امروز لازم نیست همه‌چیز را حل کنی؛ فقط امروز را زندگی کن.',
+  'تو دلیل‌های زیادی برای افتخار کردن به خودت داری.',
+  'دلتنگی هم می‌تواند شکل دیگری از عشق باشد.',
+  'وقتی دنیا شلوغ می‌شود، به صدای آرام قلبت گوش بده.',
+  'تو لایق روزهایی هستی که لبخند زدن در آن‌ها سخت نباشد.',
+  'هیچ قدم کوچکی بی‌ارزش نیست؛ مسیر با همین قدم‌ها ساخته می‌شود.',
+  'برای آینده‌ات امیدوار بمان؛ هنوز فصل‌های زیبایی باقی مانده‌اند.',
+];
+
+const letterTemplates = <String, String>{
+  'وقتی خسته‌ای':
+      'خواهر بزرگم، اگر امروز خسته‌ای، لازم نیست همه‌چیز را همین امروز حل کنی. یک نفس عمیق بکش، کمی استراحت کن و یادت باشد من به بودنت افتخار می‌کنم. ❤️',
+  'برای یک روز سخت':
+      'می‌دانم امروز ساده نیست. اما تو بارها از روزهای سخت عبور کرده‌ای. این یکی هم می‌گذرد. من کنارت هستم، حتی اگر فقط در یک جمله یا یک آغوش از دور باشد. 🫂',
+  'برای موفقیت':
+      'دیدن موفقیتت خوشحالم می‌کند. هر قدم کوچک تو ارزش جشن گرفتن دارد. ادامه بده؛ آینده برای آدم‌های شجاعی مثل تو جا دارد. ✨',
+  'شب آرام':
+      'امشب همه نگرانی‌ها را برای چند ساعت زمین بگذار. فردا فرصت تازه‌ای است. بخواب، نفس بکش و بدان که برای من همیشه باارزشی. 🌙',
+  'بی‌دلیل دوستت دارم':
+      'این نامه دلیل خاصی ندارد؛ فقط خواستم بدانی داشتن خواهری مثل تو یکی از چیزهایی است که برایش شکرگزارم. همین. ❤️🫂',
+  'بهت افتخار می‌کنم':
+      'شاید همیشه به زبان نیاورم، اما واقعاً به مسیرت، تلاش‌هایت و آدمی که هستی افتخار می‌کنم. 🌷',
+  'صبح تازه':
+      'صبح بخیر خواهر بزرگم. امروز را با این فکر شروع کن که هنوز کلی اتفاق خوب می‌تواند سر راهت قرار بگیرد. ☀️',
+  'وقتی ناامیدی':
+      'اگر امروز امیدت کم شده، اشکالی ندارد. فعلاً فقط یک قدم کوچک بردار. لازم نیست تمام مسیر را همین حالا ببینی. 💙',
+  'وقتی به خودت شک داری':
+      'به خودت شک نکن. تو قبلاً از چیزهایی عبور کرده‌ای که روزی فکر می‌کردی نمی‌توانی. این بار هم می‌توانی. ✨',
+  'برای لبخندت':
+      'فقط آمده‌ام یادآوری کنم که لبخندت یکی از دوست‌داشتنی‌ترین چیزهای دنیاست. پس امروز یک دلیل کوچک برای لبخند پیدا کن. 😊',
+  'آغوش از دور':
+      'اگر الان کنارم بودی، قبل از هر حرفی بغلت می‌کردم. تا آن زمان این چند کلمه را به جای آن آغوش نگه دار. 🫂❤️',
+  'برای رویاهایت':
+      'رویاهایت را کوچک نکن تا با ترس‌هایت هماهنگ شوند. بزرگ فکر کن؛ تو شایسته‌ی اتفاق‌های بزرگ هستی. 🌌',
+  'وقتی اشتباه کردی':
+      'یک اشتباه، تعریف تو نیست. از آن یاد بگیر، خودت را ببخش و دوباره ادامه بده. آدم‌های قوی هم اشتباه می‌کنند. 🌱',
+  'برای یک شب بارانی':
+      'اگر امروز شلوغ و سنگین بود، بگذار شب آرامت کند. فردا دوباره می‌توانی شروع کنی؛ امشب فقط نفس بکش. 🌧️',
+  'تشکر ساده':
+      'ممنون که خواهری هستی که بودنش خودش یک حس خوب است. شاید ساده به نظر برسد، اما برای من خیلی ارزشمند است. ❤️',
+  'برای روزهای بزرگ':
+      'روزی که به چیزهایی که آرزویشان را داری رسیدی، یادت باشد یک روز از همین‌جا و با همین قدم‌های کوچک شروع کرده بودی. ⭐',
+  'تو کافی هستی':
+      'لازم نیست برای ارزشمند بودن، همیشه قوی و بی‌نقص باشی. همین که خودت هستی، کافی است. 🤍',
+  'وقتی نیاز به استراحت داری':
+      'استراحت کردن عقب افتادن نیست. گاهی بهترین کاری که می‌توانی برای آینده‌ات بکنی، همین است که امروز کمی آرام‌تر باشی. 🌙',
+  'یک یادآوری کوچک':
+      'آب بخور، نفس عمیق بکش، شانه‌هایت را رها کن و یادت باشد کسی هست که از ته قلبش دوستت دارد. ❤️',
+  'نامه‌ی بی‌مناسبت':
+      'هیچ مناسبت خاصی نیست. فقط خواستم یک لحظه از روزت را با یک جمله روشن کنم: خیلی دوستت دارم خواهر بزرگم. 🫂',
+  'وقتی می‌ترسی':
+      'ترس به معنی ناتوانی نیست؛ فقط یعنی این اتفاق برایت مهم است. قدم کوچکت را بردار و باقی مسیر خودش روشن‌تر می‌شود. 🌱',
+  'وقتی دلت گرفته':
+      'لازم نیست برای غمت توضیحی داشته باشی. اجازه بده احساسش کنی، بعد کم‌کم سبک‌تر شو. من همیشه از خوشحالی تو خوشحال می‌شوم. 💙',
+  'وقتی دلتنگی':
+      'دلتنگی نشانه‌ی این است که چیزی برایت مهم بوده. بگذار این دلتنگی تبدیل به یک خاطره‌ی گرم شود. 🫂',
+  'برای تولد':
+      'تولدت فقط یک تاریخ نیست؛ یادآوری روزی است که دنیا یک انسان دوست‌داشتنی‌تر به خودش دید. تولدت مبارک خواهر بزرگم. 🎂❤️',
+  'برای فردا':
+      'هر روز لازم نیست جواب همه‌چیز را بداند. کافی است اجازه بده فردا خودش یک بخش از جواب را برایت بیاورد. 🌅',
+  'شب قبل از یک اتفاق مهم':
+      'فردا هرچه شد، ارزش تو را تعیین نمی‌کند. فقط برو و تمام تلاشت را بکن؛ همین کافی است. 🍀',
+  'برای روزهای شلوغ':
+      'وسط تمام کارهای امروز، حداقل پنج دقیقه فقط برای خودت نگه دار. تو هم جزو کارهای مهم این فهرستی. 💗',
+  'برای یک آغوش':
+      'این نامه را مثل یک آغوش کوچک ذخیره کن؛ هر وقت خواستی بازش کن. 🫂',
+  'برای روزی که برق می‌زنی':
+      'همیشه همین‌طور بدرخش؛ نه برای تأیید دیگران، برای اینکه خودت را دوست داری. ✨',
+  'من اینجام':
+      'هرقدر دنیا تغییر کند، یک جمله ثابت می‌ماند: من اینجام، خواهر بزرگم. ❤️',
+  'بدون دلیل':
+      'نه مناسبت دارد، نه دلیل. فقط چون تویی. همین برای نوشتن این نامه کافی است. 🌷',
+};
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  final prefs = await SharedPreferences.getInstance();
+  final storage = await StorageService.create();
+  await storage.purgeOldTrash();
+  await NotificationService.instance.initialize();
+  await NotificationService.instance.requestPermission();
   await CloudService.instance.init();
-  runApp(KalantarApp(prefs: prefs));
+  await initializeDateFormatting('fa');
+  runApp(BigSisterApp(storage: storage));
 }
 
-final ThemeData kTheme = ThemeData(
-  brightness: Brightness.dark,
-  useMaterial3: true,
-  scaffoldBackgroundColor: kInk,
-  colorScheme: const ColorScheme.dark(
-    primary: kPurple,
-    secondary: kBlue,
-    surface: Color(0xFF0A0C14),
-    error: kRed,
-  ),
-  inputDecorationTheme: const InputDecorationTheme(
-    filled: true,
-    fillColor: Color(0xE6080A12),
-    border: OutlineInputBorder(
-      borderRadius: BorderRadius.all(Radius.circular(16)),
-      borderSide: BorderSide(color: Color(0x443F4250)),
-    ),
-    enabledBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.all(Radius.circular(16)),
-      borderSide: BorderSide(color: Color(0x443F4250)),
-    ),
-    focusedBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.all(Radius.circular(16)),
-      borderSide: BorderSide(color: kPurple, width: 1.5),
-    ),
-    contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 15),
-  ),
-  navigationBarTheme: const NavigationBarThemeData(
-    backgroundColor: Color(0xF2070A12),
-    indicatorColor: Color(0x339A66FF),
-    height: 70,
-    labelTextStyle: WidgetStatePropertyAll(TextStyle(fontSize: 10, fontWeight: FontWeight.w700)),
-    iconTheme: WidgetStatePropertyAll(IconThemeData(size: 21)),
-  ),
-  snackBarTheme: const SnackBarThemeData(behavior: SnackBarBehavior.floating),
-  filledButtonTheme: FilledButtonThemeData(
-    style: FilledButton.styleFrom(
-      backgroundColor: kPurple,
-      foregroundColor: Colors.white,
-      minimumSize: const Size.fromHeight(48),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      textStyle: const TextStyle(fontWeight: FontWeight.w800),
-    ),
-  ),
-  appBarTheme: const AppBarTheme(backgroundColor: Colors.transparent, surfaceTintColor: Colors.transparent, elevation: 0),
-);
+class BigSisterApp extends StatefulWidget {
+  const BigSisterApp({super.key, required this.storage});
+  final StorageService storage;
+  @override
+  State<BigSisterApp> createState() => _BigSisterAppState();
+}
 
-class KalantarApp extends StatelessWidget {
-  const KalantarApp({super.key, required this.prefs});
-  final SharedPreferences prefs;
-
+class _BigSisterAppState extends State<BigSisterApp> {
+  late AppThemeChoice theme = widget.storage.loadTheme();
+  bool ready = false;
   @override
   Widget build(BuildContext context) {
+    final c = colorsFor(theme);
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'کلانتر',
-      theme: kTheme,
-      builder: (context, child) {
-        return Directionality(
-          textDirection: TextDirection.rtl,
-          child: child ?? const SizedBox.shrink(),
-        );
-      },
-      home: RootPage(prefs: prefs),
+      theme: buildDarkTheme(theme),
+      // بعضی Routeها/ویجت‌های Material در صورت نداشتن رنگ سطح،
+      // رنگ خاکستری پیش‌فرض سیستم را تا قبل از paint شدن محتوا نشان می‌دهند.
+      // این لایه باعث می‌شود کل viewport همیشه پس‌زمینه‌ی خود برنامه را داشته باشد.
+      builder: (context, child) => AnimatedBackground(
+        primary: c.primary,
+        secondary: c.secondary,
+        child: child ?? const SizedBox.expand(),
+      ),
+      home: !ready
+          ? SplashScreen(
+              primary: c.primary,
+              onDone: () => setState(() => ready = true),
+            )
+          : MainShell(
+              storage: widget.storage,
+              theme: theme,
+              onThemeChanged: (v) async {
+                await widget.storage.saveTheme(v);
+                setState(() => theme = v);
+              },
+            ),
     );
   }
 }
 
-class RootPage extends StatefulWidget {
-  const RootPage({super.key, required this.prefs});
-  final SharedPreferences prefs;
-
+class MainShell extends StatefulWidget {
+  const MainShell({
+    super.key,
+    required this.storage,
+    required this.theme,
+    required this.onThemeChanged,
+  });
+  final StorageService storage;
+  final AppThemeChoice theme;
+  final ValueChanged<AppThemeChoice> onThemeChanged;
   @override
-  State<RootPage> createState() => _RootPageState();
+  State<MainShell> createState() => _MainShellState();
 }
 
-class _RootPageState extends State<RootPage> {
-  bool loading = true;
-  bool loggedIn = false;
+class _MainShellState extends State<MainShell> {
+  late List<NoteItem> notes;
+  late List<NoteItem> trash;
   int tab = 0;
+  late int quoteIndex;
+  bool locked = false;
+  StreamSubscription<void>? _cloudSubscription;
+  StreamSubscription<bool>? _cloudConnectionSubscription;
 
   @override
   void initState() {
     super.initState();
-    Future<void>.delayed(const Duration(milliseconds: 650), () {
-      if (mounted) {
-        setState(() {
-          loading = false;
-          loggedIn = CloudService.instance.configured;
-        });
-      }
+    notes = widget.storage.activeNotes();
+    trash = widget.storage.trashNotes();
+    locked = widget.storage.loadPin() != null || widget.storage.loadBiometric();
+    quoteIndex = 0;
+    quoteIndex = widget.storage.dailyQuoteIndex(quotes.length);
+    widget.storage.setCloudChangedCallback(() => CloudService.instance.syncNow(widget.storage));
+    _cloudSubscription = CloudService.instance.contentChanges.listen((_) async {
+      await _applyRemoteCloud();
     });
+    _cloudConnectionSubscription = CloudService.instance.connectionChanges.listen((online) {
+      if (online) {
+        unawaited(_startupCloudSync());
+      }
+      if (mounted) setState(() {});
+    });
+    if (CloudService.instance.configured) {
+      Future.microtask(_startupCloudSync);
+    }
   }
 
-  Future<void> _loginDone() async {
-    if (mounted) setState(() => loggedIn = true);
+  Future<void> _startupCloudSync() async {
+    await CloudService.instance.pullAndApply(widget.storage);
+    await CloudService.instance.syncNow(widget.storage);
+    if (mounted) refresh();
   }
 
-  Future<void> _logout() async {
-    await CloudService.instance.disconnect();
-    if (mounted) setState(() { loggedIn = false; tab = 0; });
+  Future<void> _applyRemoteCloud() async {
+    if (!CloudService.instance.configured) return;
+    await CloudService.instance.pullAndApply(widget.storage);
+    for (final n in widget.storage.activeNotes()) {
+      if (n.reminderAt != null && n.reminderAt!.isAfter(DateTime.now())) {
+        await NotificationService.instance.scheduleNoteReminder(noteId: n.id, title: n.title, when: n.reminderAt!);
+      } else {
+        await NotificationService.instance.cancelNoteReminder(n.id);
+      }
+    }
+    if (mounted) refresh();
   }
 
   @override
+  void dispose() {
+    _cloudSubscription?.cancel();
+    _cloudConnectionSubscription?.cancel();
+    widget.storage.setCloudChangedCallback(null);
+    super.dispose();
+  }
+
+  void refresh() => setState(() {
+    notes = widget.storage.activeNotes();
+    trash = widget.storage.trashNotes();
+  });
+  Future<void> persist() async {
+    await widget.storage.saveNotes([...notes, ...trash]);
+    refresh();
+  }
+
+  Future<void> openEditor({NoteItem? initial, NoteKind? kind}) async {
+    final result = await Navigator.of(context).push<NoteItem>(
+      PageRouteBuilder(
+        transitionDuration: const Duration(milliseconds: 300),
+        reverseTransitionDuration: const Duration(milliseconds: 220),
+        pageBuilder: (_, animation, __) => FadeTransition(
+          opacity: CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOutCubic,
+          ),
+          child: NoteEditorScreen(
+            storage: widget.storage,
+            theme: widget.theme,
+            initial: initial,
+            initialKind: kind,
+            onDelete: initial == null ? null : () => moveToTrash(initial),
+          ),
+        ),
+      ),
+    );
+    if (result == null) return;
+    await _saveNote(result);
+  }
+
+  Future<void> _saveNote(NoteItem note) async {
+    note.updatedAt = DateTime.now();
+    await widget.storage.upsert(note);
+    if (note.reminderAt != null) {
+      await NotificationService.instance.scheduleNoteReminder(
+        noteId: note.id,
+        title: note.title,
+        when: note.reminderAt!,
+      );
+    } else {
+      await NotificationService.instance.cancelNoteReminder(note.id);
+    }
+    refresh();
+  }
+
+  Future<void> moveToTrash(NoteItem note) async {
+    await widget.storage.moveToTrash(note.id);
+    await NotificationService.instance.cancelNoteReminder(note.id);
+    refresh();
+  }
+
+  Future<void> newQuick(String label, NoteKind kind) => openEditor(kind: kind);
+
+  @override
   Widget build(BuildContext context) {
-    if (loading) return const SplashPage();
-    if (!loggedIn) return LoginPage(onLoggedIn: _loginDone);
-
-    final pages = <Widget>[
-      HomePage(onNavigate: (value) => setState(() => tab = value)),
-      const ChatPage(),
-      const CheckInPage(),
-      const GamesPage(),
-      const MediaPage(),
-      SettingsPage(onLogout: _logout),
+    if (locked)
+      return LockScreen(
+        storage: widget.storage,
+        onUnlock: () => setState(() => locked = false),
+      );
+    final c = colorsFor(widget.theme);
+    final pages = [
+      HomeTab(
+        notes: notes,
+        cloud: CloudService.instance,
+        theme: widget.theme,
+        quoteIndex: quoteIndex,
+        onNew: () => openEditor(),
+        onNavigate: (i) => setState(() => tab = i),
+        onOpenNote: (n) => openEditor(initial: n),
+      ),
+      NotesTab(
+        notes: notes,
+        theme: widget.theme,
+        onOpen: (n) => openEditor(initial: n),
+        onDelete: moveToTrash,
+        onRefresh: (_) => refresh(),
+      ),
+      ChatScreen(theme: widget.theme),
+      MemoriesTab(
+        notes: notes,
+        theme: widget.theme,
+        onOpen: (n) => openEditor(initial: n),
+        onDelete: moveToTrash,
+        onRefresh: (_) => refresh(),
+      ),
+      LettersTab(
+        theme: widget.theme,
+        cloud: CloudService.instance,
+      ),
+      SettingsTab(
+        storage: widget.storage,
+        theme: widget.theme,
+        cloud: CloudService.instance,
+        trash: trash,
+        onTheme: widget.onThemeChanged,
+        onRefresh: refresh,
+        onLockChange: () => setState(
+          () => locked =
+              widget.storage.loadPin() != null ||
+              widget.storage.loadBiometric(),
+        ),
+      ),
     ];
-
     return Scaffold(
-      body: Bg(child: pages[tab]),
+      extendBody: true,
+      backgroundColor: AppPalette.page,
+      body: ColoredBox(
+        color: AppPalette.page,
+        child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 260),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            transitionBuilder: (child, a) => FadeTransition(
+              opacity: CurvedAnimation(parent: a, curve: Curves.easeOutCubic),
+              child: child,
+            ),
+            child: KeyedSubtree(key: ValueKey(tab), child: pages[tab]),
+          ),
+      ),
+      floatingActionButton: tab <= 1
+          ? _AnimatedFab(color: c.primary, onTap: () => openEditor())
+          : null,
       bottomNavigationBar: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(26),
-            child: NavigationBar(
-              selectedIndex: tab,
-              onDestinationSelected: (value) => setState(() => tab = value),
-              destinations: const [
-                NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: 'خانه'),
-                NavigationDestination(icon: Icon(Icons.forum_outlined), selectedIcon: Icon(Icons.forum), label: 'چت'),
-                NavigationDestination(icon: Icon(Icons.favorite_border), selectedIcon: Icon(Icons.favorite), label: 'حال من'),
-                NavigationDestination(icon: Icon(Icons.sports_esports_outlined), selectedIcon: Icon(Icons.sports_esports), label: 'بازی'),
-                NavigationDestination(icon: Icon(Icons.perm_media_outlined), selectedIcon: Icon(Icons.perm_media), label: 'رسانه'),
-                NavigationDestination(icon: Icon(Icons.settings_outlined), selectedIcon: Icon(Icons.settings), label: 'تنظیمات'),
+          padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: const Color(0xFF080D16),
+              borderRadius: BorderRadius.circular(38),
+              border: Border.all(color: Colors.white.withValues(alpha: .06)),
+              boxShadow: [
+                BoxShadow(
+                  color: c.glow.withValues(alpha: .08),
+                  blurRadius: 28,
+                  spreadRadius: 1,
+                ),
               ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(38),
+              child: NavigationBar(
+                backgroundColor: Colors.transparent,
+                height: 74,
+                selectedIndex: tab,
+                onDestinationSelected: (i) => setState(() => tab = i),
+                destinations: [
+                  NavigationDestination(
+                    icon: Icon(Icons.home_outlined, color: Colors.white70),
+                    selectedIcon: Icon(Icons.home_rounded, color: c.primary),
+                    label: 'خانه',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(
+                      Icons.sticky_note_2_outlined,
+                      color: Colors.white70,
+                    ),
+                    selectedIcon: Icon(
+                      Icons.sticky_note_2_rounded,
+                      color: c.primary,
+                    ),
+                    label: 'یادداشت‌ها',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(Icons.forum_outlined, color: Colors.white70),
+                    selectedIcon: Icon(Icons.forum_rounded, color: c.primary),
+                    label: 'چت',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(
+                      Icons.photo_library_outlined,
+                      color: Colors.white70,
+                    ),
+                    selectedIcon: Icon(
+                      Icons.photo_library_rounded,
+                      color: c.primary,
+                    ),
+                    label: 'خاطره‌ها',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(
+                      Icons.mail_outline_rounded,
+                      color: Colors.white70,
+                    ),
+                    selectedIcon: Icon(Icons.mail_rounded, color: c.primary),
+                    label: 'نامه‌ها',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(Icons.settings_outlined, color: Colors.white70),
+                    selectedIcon: Icon(
+                      Icons.settings_rounded,
+                      color: c.primary,
+                    ),
+                    label: 'تنظیمات',
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -170,100 +450,1215 @@ class _RootPageState extends State<RootPage> {
   }
 }
 
-class Bg extends StatelessWidget {
-  const Bg({super.key, required this.child});
+class _AnimatedFab extends StatelessWidget {
+  const _AnimatedFab({required this.color, required this.onTap});
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => FloatingActionButton.extended(
+    elevation: 6,
+    backgroundColor: color,
+    foregroundColor: Colors.black,
+    onPressed: onTap,
+    icon: const Icon(Icons.add_rounded, size: 28),
+    label: const Text(
+      'یادداشت جدید',
+      style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+    ),
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+  );
+}
+
+class _Reveal extends StatelessWidget {
+  const _Reveal({required this.child, this.delay = Duration.zero})
+    : offset = const Offset(0, .08);
   final Widget child;
+  final Duration delay;
+  final Offset offset;
+  @override
+  Widget build(BuildContext context) => TweenAnimationBuilder<double>(
+    duration: Duration(milliseconds: 520 + delay.inMilliseconds),
+    curve: Curves.easeOutCubic,
+    tween: Tween(begin: 0, end: 1),
+    builder: (_, v, __) => Opacity(
+      opacity: v,
+      child: FractionalTranslation(
+        translation: Offset(offset.dx * (1 - v), offset.dy * (1 - v)),
+        child: child,
+      ),
+    ),
+  );
+}
+
+class _BreathingLogo extends StatefulWidget {
+  const _BreathingLogo({required this.color});
+  final Color color;
+
+  @override
+  State<_BreathingLogo> createState() => _BreathingLogoState();
+}
+
+class _BreathingLogoState extends State<_BreathingLogo>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1800),
+  )..repeat(reverse: true);
+
+  late final Animation<double> _scale = Tween<double>(
+    begin: .96,
+    end: 1.04,
+  ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+
+  late final Animation<double> _glow = Tween<double>(
+    begin: .12,
+    end: .30,
+  ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      fit: StackFit.expand,
-      children: <Widget>[
-        Image.asset(
-          kBackgroundAsset,
-          fit: BoxFit.cover,
-          alignment: Alignment.topCenter,
-          errorBuilder: (_, __, ___) => const ColoredBox(color: kInk),
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return Transform.scale(
+          scale: _scale.value,
+          child: Container(
+            width: 66,
+            height: 66,
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: widget.color.withValues(alpha: .08),
+              border: Border.all(color: widget.color.withValues(alpha: .18)),
+              boxShadow: [
+                BoxShadow(
+                  color: widget.color.withValues(alpha: _glow.value),
+                  blurRadius: 24,
+                  spreadRadius: 2,
+                ),
+              ],
+            ),
+            child: ClipOval(
+              child: Image.asset(
+                'assets/logo.png',
+                fit: BoxFit.cover,
+                filterQuality: FilterQuality.high,
+                errorBuilder: (context, error, stackTrace) =>
+                    Icon(Icons.favorite_rounded, color: widget.color, size: 32),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class HomeTab extends StatelessWidget {
+  const HomeTab({
+    super.key,
+    required this.notes,
+    required this.cloud,
+    required this.theme,
+    required this.quoteIndex,
+    required this.onNew,
+    required this.onNavigate,
+    required this.onOpenNote,
+  });
+  final List<NoteItem> notes;
+  final CloudService cloud;
+  final AppThemeChoice theme;
+  final int quoteIndex;
+  final VoidCallback onNew;
+  final ValueChanged<int> onNavigate;
+  final ValueChanged<NoteItem> onOpenNote;
+
+  String greeting() {
+    final name = cloud.myDisplayName;
+    final h = DateTime.now().hour;
+    if (h < 11) return 'صبح بخیر $name';
+    if (h < 15) return 'ظهر بخیر $name';
+    if (h < 19) return 'عصر بخیر $name';
+    return 'شب بخیر $name';
+  }
+
+  String _messageForHour() {
+    final h = DateTime.now().hour;
+    if (h < 11)
+      return 'روزت را آرام شروع کن؛ امروز هم فرصت تازه‌ای برای درخشیدن داری.';
+    if (h < 15) return 'وسط شلوغی روز، چند دقیقه برای خودت نگه دار.';
+    if (h < 19) return 'به چیزهایی که امروز از پسشان برآمدی افتخار کن.';
+    return 'همه‌چیز لازم نیست امشب حل شود؛ با خیال راحت استراحت کن.';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = colorsFor(theme);
+    final now = DateTime.now();
+    final pinned = notes.where((n) => n.pinned).take(3).toList();
+    final fav = notes.where((n) => n.favorite).length;
+    final reminders = notes.where((n) => n.reminderAt != null).length;
+    final past = notes
+        .where(
+          (n) =>
+              n.kind == NoteKind.memory &&
+              n.createdAt.month == now.month &&
+              n.createdAt.day == now.day &&
+              n.createdAt.year < now.year,
+        )
+        .toList();
+
+    return ColoredBox(
+      color: AppPalette.page,
+      child: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 145),
+          children: [
+            _Reveal(
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          greeting() + ' ❤️',
+                          style: const TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 5),
+                        Text(
+                          DateFormat('d MMMM yyyy', 'fa').format(now),
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: .48),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        GestureDetector(
+                          onTap: () => onNavigate(5),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                CloudService.instance.online ? Icons.sync_rounded : Icons.cloud_off_rounded,
+                                size: 15,
+                                color: CloudService.instance.online ? c.primary : Colors.white38,
+                              ),
+                              const SizedBox(width: 5),
+                              Text(
+                                CloudService.instance.configured
+                                    ? (CloudService.instance.online ? 'دفتر مشترک • آنلاین' : 'دفتر مشترک • آفلاین')
+                                    : 'دفتر مشترک • راه‌اندازی نشده',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: CloudService.instance.online ? c.primary : Colors.white38,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  _BreathingLogo(color: c.primary),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+            _Reveal(
+              delay: const Duration(milliseconds: 120),
+              child: _Glass(
+                accent: c.primary,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.auto_awesome_rounded, color: c.primary),
+                        const SizedBox(width: 9),
+                        const Text(
+                          'جمله امروز',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      '«${quotes[quoteIndex % quotes.length]}»',
+                      style: const TextStyle(
+                        fontSize: 19,
+                        height: 1.55,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'هر ۲۴ ساعت یک جمله‌ی تازه برایت انتخاب می‌شود ✨',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: .45),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                _stat(
+                  '${notes.length}',
+                  'یادداشت',
+                  Icons.sticky_note_2_rounded,
+                  c.primary,
+                ),
+                const SizedBox(width: 10),
+                _stat(
+                  '$fav',
+                  'محبوب',
+                  Icons.favorite_rounded,
+                  Colors.pinkAccent,
+                ),
+                const SizedBox(width: 10),
+                _stat(
+                  '$reminders',
+                  'یادآوری',
+                  Icons.notifications_active_rounded,
+                  Colors.amber,
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _Reveal(
+              delay: const Duration(milliseconds: 180),
+              child: _Glass(
+                accent: c.secondary,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'پیام همین ساعت',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 17,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    _timeLine(greeting(), _messageForHour(), c.primary),
+                    const SizedBox(height: 10),
+                    //  Text(
+                    // 'صبح بخیر آبجی بزرگم ☀️ • ظهر بخیر خواهر بزرگم 🌤️ • عصر بخیر آبجی ❤️ • شب بخیر خواهرم 🌙',
+                    // style: TextStyle(
+                    //     color: Colors.white.withValues(alpha: .48),
+                    //     fontSize: 12,
+                    //   ),
+                    //  ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            _Reveal(
+              delay: const Duration(milliseconds: 260),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _quick(
+                      'یادداشت',
+                      Icons.edit_note_rounded,
+                      c.primary,
+                      onNew,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _quick(
+                      'خاطره',
+                      Icons.photo_library_rounded,
+                      c.secondary,
+                      () => onNavigate(3),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _quick(
+                      'نامه',
+                      Icons.mail_rounded,
+                      c.accent,
+                      () => onNavigate(4),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (past.isNotEmpty) ...[
+              const SizedBox(height: 20),
+              _Reveal(
+                child: _Glass(
+                  accent: Colors.amber,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.history_rounded,
+                            color: Colors.amber,
+                          ),
+                          const SizedBox(width: 8),
+                          const Expanded(
+                            child: Text(
+                              'امروز در گذشته',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w900,
+                                fontSize: 17,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'خاطرات سال‌های قبل همین روز را دوباره ببین.',
+                        style: TextStyle(color: Colors.white54),
+                      ),
+                      const SizedBox(height: 10),
+                      ...past
+                          .take(3)
+                          .map(
+                            (n) => ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              onTap: () => onOpenNote(n),
+                              leading: CircleAvatar(
+                                backgroundColor: Colors.amber.withValues(
+                                  alpha: .1,
+                                ),
+                                child: const Icon(
+                                  Icons.favorite_rounded,
+                                  color: Colors.amber,
+                                ),
+                              ),
+                              title: Text(
+                                n.title.isEmpty ? 'بدون عنوان' : n.title,
+                              ),
+                              subtitle: Text(
+                                n.body,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+            if (pinned.isNotEmpty) ...[
+              const SizedBox(height: 20),
+              const Text(
+                'سنجاق‌شده‌ها',
+                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
+              ),
+              const SizedBox(height: 9),
+              ...pinned.map(
+                (n) => Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: _Glass(
+                    accent: Colors.amber,
+                    onTap: () => onOpenNote(n),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.push_pin_rounded, color: Colors.amber),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            n.title.isEmpty ? 'بدون عنوان' : n.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (n.favorite)
+                          const Icon(
+                            Icons.favorite_rounded,
+                            color: Colors.pinkAccent,
+                            size: 18,
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ],
         ),
-        Container(color: const Color(0xC9000007)),
-        Container(
-          decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: <Color>[Color(0x70230D49), Color(0x86030D1D), Color(0xF004050A)])),
-        ),
-        const DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: RadialGradient(center: Alignment.topRight, radius: 1.05, colors: <Color>[Color(0x422D8CFF), Color(0x00000000)]),
+      ),
+    );
+  }
+
+  Widget _stat(String value, String label, IconData icon, Color color) =>
+      Expanded(
+        child: _Glass(
+          accent: color,
+          child: Column(
+            children: [
+              Icon(icon, color: color),
+              const SizedBox(height: 7),
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              Text(
+                label,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: .42),
+                  fontSize: 11,
+                ),
+              ),
+            ],
           ),
         ),
-        const DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: RadialGradient(center: Alignment.bottomLeft, radius: .9, colors: <Color>[Color(0x3DFF174F), Color(0x00000000)]),
-          ),
-        ),
-        SafeArea(child: child),
-      ],
-    );
-  }
-}
+      );
 
-class Glass extends StatelessWidget {
-  const Glass({super.key, required this.child, this.padding = const EdgeInsets.all(16)});
-  final Widget child;
-  final EdgeInsetsGeometry padding;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: padding,
-      decoration: BoxDecoration(
-        color: kPanel,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.075)),
-        boxShadow: const <BoxShadow>[
-          BoxShadow(color: Color(0x44000000), blurRadius: 22, offset: Offset(0, 10)),
-        ],
-      ),
-      child: child,
-    );
-  }
-}
-
-class Logo extends StatelessWidget {
-  const Logo({super.key, this.size = 72});
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: const BoxDecoration(
-        shape: BoxShape.circle,
-        boxShadow: <BoxShadow>[
-          BoxShadow(color: Color(0x669A66FF), blurRadius: 34, spreadRadius: 2),
-        ],
-      ),
-      child: ClipOval(child: Image.asset('assets/logo.png', fit: BoxFit.cover)),
-    );
-  }
-}
-
-class SplashPage extends StatelessWidget {
-  const SplashPage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const Bg(
-      child: Center(
+  Widget _timeLine(String title, String text, Color color) => Row(
+    children: [
+      Icon(Icons.favorite_border_rounded, color: color),
+      const SizedBox(width: 9),
+      Expanded(
         child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Logo(size: 112),
-            SizedBox(height: 18),
-            Text('کلانتر', style: TextStyle(fontSize: 34, fontWeight: FontWeight.w900)),
-            SizedBox(height: 6),
-            Text('یادداشت‌های خصوصی • یک فضای مشترک', style: TextStyle(color: Colors.white54)),
-            SizedBox(height: 24),
-            SizedBox(width: 150, child: LinearProgressIndicator(minHeight: 4)),
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+            const SizedBox(height: 3),
+            Text(
+              text,
+              style: TextStyle(color: Colors.white.withValues(alpha: .62)),
+            ),
+          ],
+        ),
+      ),
+    ],
+  );
+
+  Widget _quick(String title, IconData icon, Color color, VoidCallback onTap) =>
+      _Glass(
+        accent: color,
+        onTap: onTap,
+        child: Column(
+          children: [
+            Icon(icon, color: color),
+            const SizedBox(height: 7),
+            Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+          ],
+        ),
+      );
+}
+
+class NotesTab extends StatefulWidget {
+  const NotesTab({
+    super.key,
+    required this.notes,
+    required this.theme,
+    required this.onOpen,
+    required this.onDelete,
+    required this.onRefresh,
+  });
+  final List<NoteItem> notes;
+  final AppThemeChoice theme;
+  final ValueChanged<NoteItem> onOpen;
+  final ValueChanged<NoteItem> onDelete;
+  final ValueChanged<NoteItem> onRefresh;
+  @override
+  State<NotesTab> createState() => _NotesTabState();
+}
+
+class _NotesTabState extends State<NotesTab> {
+  String query = '';
+  NoteFolder? folder;
+  String? tag;
+  String sort = 'جدیدترین';
+
+  List<NoteItem> get filtered {
+    final q = query.trim().toLowerCase();
+    final list = widget.notes.where((n) {
+      final hit =
+          q.isEmpty ||
+          '${n.title} ${n.body} ${n.folder.label}'.toLowerCase().contains(q) ||
+          n.tags.any((t) => t.toLowerCase().contains(q));
+      return hit &&
+          (folder == null || n.folder == folder) &&
+          (tag == null || n.tags.contains(tag)) &&
+          !n.inTrash;
+    }).toList();
+    list.sort((a, b) {
+      if (a.pinned != b.pinned) return a.pinned ? -1 : 1;
+      return sort == 'قدیمی‌ترین'
+          ? a.updatedAt.compareTo(b.updatedAt)
+          : b.updatedAt.compareTo(a.updatedAt);
+    });
+    return list;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = colorsFor(widget.theme);
+    final tags = widget.notes.expand((e) => e.tags).toSet().toList();
+    return ColoredBox(
+      color: AppPalette.page,
+      child: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 16, 18, 8),
+              child: Column(
+                children: [
+                  const Align(
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      'یادداشت‌های من',
+                      style: TextStyle(
+                        fontSize: 25,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    onChanged: (v) => setState(() => query = v),
+                    decoration: const InputDecoration(
+                      prefixIcon: Icon(Icons.search_rounded),
+                      hintText: 'عنوان، متن، پوشه یا Tag...',
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        _chip(
+                          'همه',
+                          folder == null,
+                          () => setState(() => folder = null),
+                          c.primary,
+                        ),
+                        ...NoteFolder.values.map(
+                          (f) => _chip(
+                            f.label,
+                            folder == f,
+                            () => setState(() => folder = f),
+                            c.primary,
+                          ),
+                        ),
+                        if (tags.isNotEmpty)
+                          ...tags.map(
+                            (t) => _chip(
+                              '#$t',
+                              tag == t,
+                              () => setState(() => tag = tag == t ? null : t),
+                              c.secondary,
+                            ),
+                          ),
+                        _chip(sort, false, _sortMenu, c.accent),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: filtered.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.search_off_rounded,
+                            size: 62,
+                            color: c.primary.withValues(alpha: .5),
+                          ),
+                          const SizedBox(height: 10),
+                          const Text('یادداشتی پیدا نشد'),
+                          const SizedBox(height: 6),
+                          const Text(
+                            'از جست‌وجو یا پوشه دیگری استفاده کن.',
+                            style: TextStyle(color: Colors.white54),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(18, 8, 18, 145),
+                      itemCount: filtered.length,
+                      itemBuilder: (context, i) {
+                        final n = filtered[i];
+                        return _Reveal(
+                          delay: Duration(milliseconds: i * 35),
+                          child: Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: Dismissible(
+                              key: ValueKey(n.id),
+                              direction: DismissDirection.endToStart,
+                              confirmDismiss: (_) async {
+                                widget.onDelete(n);
+                                return true;
+                              },
+                              background: Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.redAccent.withValues(
+                                    alpha: .16,
+                                  ),
+                                  borderRadius: BorderRadius.circular(25),
+                                ),
+                                alignment: Alignment.centerRight,
+                                padding: const EdgeInsets.only(right: 24),
+                                child: const Icon(
+                                  Icons.delete_outline_rounded,
+                                  color: Colors.redAccent,
+                                ),
+                              ),
+                              child: _NoteCard(
+                                note: n,
+                                color: c.primary,
+                                onTap: () => widget.onOpen(n),
+                                onDelete: () => widget.onDelete(n),
+                                onRefresh: () => widget.onRefresh(n),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _chip(String label, bool selected, VoidCallback onTap, Color color) =>
+      Padding(
+        padding: const EdgeInsets.only(left: 6),
+        child: FilterChip(
+          selected: selected,
+          label: Text(label),
+          onSelected: (_) => onTap(),
+          showCheckmark: false,
+          avatar: selected
+              ? Icon(Icons.check_rounded, size: 14, color: color)
+              : null,
+        ),
+      );
+  void _sortMenu() => showModalBottomSheet(
+    context: context,
+    backgroundColor: AppPalette.surface,
+    builder: (_) => SafeArea(
+      child: Wrap(
+        children: ['جدیدترین', 'قدیمی‌ترین']
+            .map(
+              (s) => ListTile(
+                leading: Icon(
+                  s == sort
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_off,
+                ),
+                title: Text(s),
+                onTap: () {
+                  setState(() => sort = s);
+                  Navigator.pop(context);
+                },
+              ),
+            )
+            .toList(),
+      ),
+    ),
+  );
+}
+
+class _NoteCard extends StatefulWidget {
+  const _NoteCard({
+    required this.note,
+    required this.color,
+    required this.onTap,
+    required this.onDelete,
+    required this.onRefresh,
+  });
+  final NoteItem note;
+  final Color color;
+  final VoidCallback onTap;
+  final VoidCallback onDelete;
+  final VoidCallback onRefresh;
+  @override
+  State<_NoteCard> createState() => _NoteCardState();
+}
+
+class _NoteCardState extends State<_NoteCard> {
+  bool down = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final n = widget.note;
+    return GestureDetector(
+      onTapDown: (_) => setState(() => down = true),
+      onTapCancel: () => setState(() => down = false),
+      onTapUp: (_) {
+        setState(() => down = false);
+        widget.onTap();
+      },
+      child: AnimatedScale(
+        scale: down ? .985 : 1,
+        duration: const Duration(milliseconds: 120),
+        curve: Curves.easeOut,
+        child: _Glass(
+          accent: widget.color,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      n.title.isEmpty ? 'بدون عنوان' : n.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 17,
+                      ),
+                    ),
+                  ),
+                  if (n.pinned)
+                    const Icon(
+                      Icons.push_pin_rounded,
+                      color: Colors.amber,
+                      size: 18,
+                    ),
+                  if (n.favorite)
+                    const Padding(
+                      padding: EdgeInsets.only(left: 6),
+                      child: Icon(
+                        Icons.favorite_rounded,
+                        color: Colors.pinkAccent,
+                        size: 18,
+                      ),
+                    ),
+                  if (n.reminderAt != null)
+                    const Padding(
+                      padding: EdgeInsets.only(left: 6),
+                      child: Icon(
+                        Icons.notifications_active_rounded,
+                        color: Colors.amber,
+                        size: 17,
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              if (n.kind == NoteKind.checklist) _checkPreview(n),
+              if (n.kind != NoteKind.checklist && n.body.isNotEmpty)
+                Text(
+                  _stripMarkup(n.body),
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: n.textSize,
+                    height: 1.45,
+                    color: Colors.white.withValues(alpha: .72),
+                  ),
+                ),
+              if (n.imagePaths.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: SizedBox(
+                    height: 95,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: math.min(n.imagePaths.length, 4),
+                      separatorBuilder: (_, __) => const SizedBox(width: 7),
+                      itemBuilder: (_, i) => ClipRRect(
+                        borderRadius: BorderRadius.circular(15),
+                        child: Image.file(
+                          File(n.imagePaths[i]),
+                          width: 95,
+                          height: 95,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              if (n.audioPath != null)
+                const Padding(
+                  padding: EdgeInsets.only(top: 10),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.graphic_eq_rounded,
+                        color: Colors.white54,
+                        size: 18,
+                      ),
+                      SizedBox(width: 6),
+                      Text(
+                        'یادداشت صوتی',
+                        style: TextStyle(color: Colors.white54, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+              const SizedBox(height: 9),
+              Wrap(
+                spacing: 7,
+                runSpacing: 5,
+                children: [
+                  _tagPill(n.folder.label, widget.color),
+                  ...n.tags.take(3).map((t) => _tagPill('#$t', Colors.white54)),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                DateFormat('yyyy/MM/dd • HH:mm').format(n.updatedAt),
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: .33),
+                  fontSize: 11,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _checkPreview(NoteItem n) => Column(
+    children: n.checkItems
+        .take(4)
+        .map(
+          (e) => Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Row(
+              children: [
+                Icon(
+                  e.done
+                      ? Icons.check_box_rounded
+                      : Icons.check_box_outline_blank_rounded,
+                  size: 18,
+                  color: e.done ? widget.color : Colors.white38,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    e.text,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        )
+        .toList(),
+  );
+
+  Widget _tagPill(String t, Color c) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+    decoration: BoxDecoration(
+      color: c.withValues(alpha: .09),
+      borderRadius: BorderRadius.circular(50),
+    ),
+    child: Text(
+      t,
+      style: TextStyle(fontSize: 10, color: c, fontWeight: FontWeight.w700),
+    ),
+  );
+  String _stripMarkup(String v) =>
+      v.replaceAll('**', '').replaceAll('__', '').replaceAll('_', '');
+}
+
+class MemoriesTab extends StatefulWidget {
+  const MemoriesTab({
+    super.key,
+    required this.notes,
+    required this.theme,
+    required this.onOpen,
+    required this.onDelete,
+    required this.onRefresh,
+  });
+  final List<NoteItem> notes;
+  final AppThemeChoice theme;
+  final ValueChanged<NoteItem> onOpen;
+  final ValueChanged<NoteItem> onDelete;
+  final ValueChanged<NoteItem> onRefresh;
+  @override
+  State<MemoriesTab> createState() => _MemoriesTabState();
+}
+
+class _MemoriesTabState extends State<MemoriesTab> {
+  bool calendar = false;
+  @override
+  Widget build(BuildContext context) {
+    final c = colorsFor(widget.theme);
+    final memories =
+        widget.notes
+            .where((e) => e.kind == NoteKind.memory && !e.inTrash)
+            .toList()
+          ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    return SafeArea(
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 16, 18, 8),
+            child: Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'خاطره‌ها',
+                    style: TextStyle(fontSize: 25, fontWeight: FontWeight.w900),
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => setState(() => calendar = !calendar),
+                  icon: Icon(
+                    calendar
+                        ? Icons.grid_view_rounded
+                        : Icons.calendar_month_rounded,
+                    color: c.primary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: calendar
+                ? _MemoryCalendar(
+                    notes: memories,
+                    color: c.primary,
+                    onOpen: widget.onOpen,
+                  )
+                : memories.isEmpty
+                ? Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.photo_library_outlined,
+                          size: 64,
+                          color: c.primary.withValues(alpha: .45),
+                        ),
+                        const SizedBox(height: 12),
+                        const Text('هنوز خاطره‌ای ثبت نشده'),
+                        const SizedBox(height: 6),
+                        const Text(
+                          'یک عکس و چند کلمه می‌تواند یک روز را ماندگار کند.',
+                          style: TextStyle(color: Colors.white54),
+                        ),
+                      ],
+                    ),
+                  )
+                : GridView.builder(
+                    padding: const EdgeInsets.fromLTRB(18, 8, 18, 145),
+                    itemCount: memories.length,
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          crossAxisSpacing: 12,
+                          mainAxisSpacing: 12,
+                          childAspectRatio: .80,
+                        ),
+                    itemBuilder: (context, i) {
+                      final n = memories[i];
+                      return _Reveal(
+                        delay: Duration(milliseconds: i * 30),
+                        child: _MemoryCard(
+                          note: n,
+                          color: c.primary,
+                          onTap: () => widget.onOpen(n),
+                          onDelete: () => widget.onDelete(n),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MemoryCard extends StatelessWidget {
+  const _MemoryCard({
+    required this.note,
+    required this.color,
+    required this.onTap,
+    required this.onDelete,
+  });
+  final NoteItem note;
+  final Color color;
+  final VoidCallback onTap;
+  final VoidCallback onDelete;
+
+  Future<void> _confirmDelete(BuildContext context) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('حذف خاطره'),
+        content: const Text('این خاطره به سطل زباله منتقل شود؟'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('لغو'),
+          ),
+          FilledButton.tonal(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('حذف'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true && context.mounted) onDelete();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = note.imagePaths.isNotEmpty ? note.imagePaths.first : null;
+    final hasImage = p != null && File(p).existsSync();
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppPalette.surface,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: Colors.white.withValues(alpha: .05)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: .25),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: hasImage
+                  ? Image.file(File(p), fit: BoxFit.cover)
+                  : Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            color.withValues(alpha: .13),
+                            Colors.white.withValues(alpha: .03),
+                          ],
+                        ),
+                      ),
+                      child: Icon(
+                        Icons.photo_rounded,
+                        size: 52,
+                        color: color.withValues(alpha: .4),
+                      ),
+                    ),
+            ),
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.transparent,
+                      Colors.black.withValues(alpha: .82),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              top: 7,
+              left: 7,
+              right: 7,
+              child: Row(
+                children: [
+                  IconButton(
+                    onPressed: onTap,
+                    style: IconButton.styleFrom(
+                      backgroundColor: Colors.black54,
+                    ),
+                    icon: const Icon(Icons.edit_rounded, size: 18),
+                  ),
+                  const Spacer(),
+                  if (note.favorite)
+                    const Icon(
+                      Icons.favorite_rounded,
+                      color: Colors.pinkAccent,
+                      size: 18,
+                    ),
+                  const SizedBox(width: 4),
+                  IconButton(
+                    onPressed: () => _confirmDelete(context),
+                    style: IconButton.styleFrom(
+                      backgroundColor: Colors.black54,
+                    ),
+                    icon: const Icon(
+                      Icons.delete_outline_rounded,
+                      color: Colors.redAccent,
+                      size: 19,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      note.title.isEmpty ? 'خاطره' : note.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                    if (note.body.isNotEmpty)
+                      Text(
+                        note.body,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 11,
+                          height: 1.35,
+                        ),
+                      ),
+                    const SizedBox(height: 5),
+                    Text(
+                      DateFormat('yyyy/MM/dd').format(note.createdAt),
+                      style: const TextStyle(
+                        color: Colors.white54,
+                        fontSize: 10,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -271,28 +1666,140 @@ class SplashPage extends StatelessWidget {
   }
 }
 
-class PageHeader extends StatelessWidget {
-  const PageHeader({super.key, required this.title, required this.subtitle});
-  final String title;
-  final String subtitle;
+class _MemoryCalendar extends StatelessWidget {
+  const _MemoryCalendar({
+    required this.notes,
+    required this.color,
+    required this.onOpen,
+  });
+  final List<NoteItem> notes;
+  final Color color;
+  final ValueChanged<NoteItem> onOpen;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: <Widget>[
-        Container(
-          padding: const EdgeInsets.all(4),
-          decoration: BoxDecoration(shape: BoxShape.circle, color: kBlue.withValues(alpha: .12), border: Border.all(color: kBlue.withValues(alpha: .28))),
-          child: const Logo(size: 48),
+    final now = DateTime.now();
+    final first = DateTime(now.year, now.month, 1);
+    final days = DateTime(now.year, now.month + 1, 0).day;
+    final offset = first.weekday % 7;
+    final totalCells = offset + days;
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(18, 8, 18, 145),
+      children: [
+        Text(
+          DateFormat('MMMM yyyy', 'fa').format(now),
+          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+          textAlign: TextAlign.center,
         ),
-        const SizedBox(width: 10),
-        Expanded(
+        const SizedBox(height: 12),
+        _Glass(
+          accent: color,
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
-              const SizedBox(height: 4),
-              Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white54, fontSize: 11.5)),
+            children: [
+              Row(
+                children: ['ش', 'ی', 'د', 'س', 'چ', 'پ', 'ج']
+                    .map(
+                      (d) => Expanded(
+                        child: Center(
+                          child: Text(
+                            d,
+                            style: TextStyle(
+                              color: color,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ),
+                    )
+                    .toList(),
+              ),
+              const SizedBox(height: 10),
+              GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: totalCells,
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 7,
+                  crossAxisSpacing: 6,
+                  mainAxisSpacing: 6,
+                  childAspectRatio: 1.0,
+                ),
+                itemBuilder: (context, index) {
+                  if (index < offset) return const SizedBox();
+                  final day = index - offset + 1;
+                  final date = DateTime(now.year, now.month, day);
+                  final matches = notes
+                      .where(
+                        (n) =>
+                            n.createdAt.year == date.year &&
+                            n.createdAt.month == date.month &&
+                            n.createdAt.day == date.day,
+                      )
+                      .toList();
+                  final hasMemory = matches.isNotEmpty;
+                  return Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: hasMemory ? () => onOpen(matches.first) : null,
+                      borderRadius: BorderRadius.circular(16),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 220),
+                        decoration: BoxDecoration(
+                          color: hasMemory
+                              ? color.withValues(alpha: .14)
+                              : const Color(0xFF080D16),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: hasMemory
+                                ? color.withValues(alpha: .45)
+                                : Colors.white.withValues(alpha: .055),
+                          ),
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              '$day',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w900,
+                                color: hasMemory ? color : Colors.white70,
+                              ),
+                            ),
+                            if (hasMemory) ...[
+                              const SizedBox(height: 2),
+                              Icon(
+                                Icons.favorite_rounded,
+                                size: 11,
+                                color: color,
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        _Glass(
+          accent: color,
+          child: Row(
+            children: [
+              Icon(Icons.auto_awesome_rounded, color: color),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  notes.isEmpty
+                      ? 'هنوز خاطره‌ای برای این ماه ثبت نشده.'
+                      : '${notes.length} خاطره در دفترت ثبت شده است.',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
             ],
           ),
         ),
@@ -301,804 +1808,1432 @@ class PageHeader extends StatelessWidget {
   }
 }
 
-class LoginPage extends StatefulWidget {
-  const LoginPage({super.key, required this.onLoggedIn});
-  final Future<void> Function() onLoggedIn;
+class LettersTab extends StatefulWidget {
+  const LettersTab({super.key, required this.theme, required this.cloud});
+  final AppThemeChoice theme;
+  final CloudService cloud;
 
   @override
-  State<LoginPage> createState() => _LoginPageState();
+  State<LettersTab> createState() => _LettersTabState();
 }
 
-class _LoginPageState extends State<LoginPage> {
-  final password = TextEditingController();
-  final server = TextEditingController(
-    text: const String.fromEnvironment('KALANTAR_API_URL', defaultValue: ''),
-  );
-  String role = 'person1';
-  bool busy = false;
-  String error = '';
+class _LettersTabState extends State<LettersTab> {
+  String query = '';
+  final List<CloudLetter> letters = [];
+  StreamSubscription<CloudLetter>? incomingSub;
+  bool loading = true;
+  String? myDeviceId;
+  bool sending = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+    incomingSub = widget.cloud.incomingLetters.listen((letter) {
+      if (letters.any((x) => x.id == letter.id)) return;
+      if (mounted) setState(() => letters.add(letter));
+    });
+  }
+
+  Future<void> _load() async {
+    myDeviceId = await widget.cloud.deviceId;
+    try {
+      final loaded = await widget.cloud.fetchLetters();
+      if (!mounted) return;
+      setState(() {
+        letters
+          ..clear()
+          ..addAll(loaded);
+        loading = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => loading = false);
+    }
+  }
 
   @override
   void dispose() {
-    password.dispose();
-    server.dispose();
+    incomingSub?.cancel();
     super.dispose();
   }
 
-  Future<void> submit() async {
-    FocusManager.instance.primaryFocus?.unfocus();
-    if (server.text.trim().isEmpty) {
-      setState(() => error = 'آدرس سرور این نسخه تنظیم نشده است.');
-      return;
-    }
-    if (password.text.trim().length < 4) {
-      setState(() => error = 'رمز کلید را وارد کن.');
-      return;
-    }
+  Future<void> _compose({String title = '', String body = ''}) async {
+    final titleController = TextEditingController(text: title);
+    final bodyController = TextEditingController(text: body);
+    final result = await showDialog<List<String>>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('ارسال نامه'),
+        content: SizedBox(
+          width: 520,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: titleController,
+                textDirection: ui.TextDirection.rtl,
+                decoration: const InputDecoration(labelText: 'عنوان نامه'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: bodyController,
+                textDirection: ui.TextDirection.rtl,
+                minLines: 7,
+                maxLines: 12,
+                decoration: const InputDecoration(labelText: 'متن نامه', alignLabelWithHint: true),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('لغو')),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(dialogContext, [titleController.text, bodyController.text]),
+            icon: const Icon(Icons.send_rounded),
+            label: const Text('ارسال مستقیم'),
+          ),
+        ],
+      ),
+    );
+    titleController.dispose();
+    bodyController.dispose();
+    if (result == null) return;
+    await _sendLetter(result[0], result[1]);
+  }
 
-    setState(() { busy = true; error = ''; });
+  Future<void> _sendLetter(String title, String body) async {
+    if (!widget.cloud.configured || body.trim().isEmpty || sending) return;
+    setState(() => sending = true);
     try {
-      await CloudService.instance.setServerUrl(server.text.trim());
-      await CloudService.instance.login(role: role, password: password.text.trim());
-      await widget.onLoggedIn();
-    } catch (e) {
-      setState(() => error = friendlyError(e));
+      final letter = await widget.cloud.sendLetter(title: title, body: body);
+      if (mounted && !letters.any((x) => x.id == letter.id)) {
+        setState(() => letters.add(letter));
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('نامه مستقیم ارسال شد ❤️')));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('نامه ارسال نشد؛ اتصال دفتر مشترک را بررسی کن.')));
+      }
     } finally {
-      if (mounted) setState(() => busy = false);
+      if (mounted) setState(() => sending = false);
     }
+  }
+
+  Future<void> _openLetter(CloudLetter letter) async {
+    if (!letter.isRead && letter.senderId != myDeviceId) {
+      await widget.cloud.markLetterRead(letter.id);
+    }
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text(letter.title),
+        content: SingleChildScrollView(child: Text(letter.body, style: const TextStyle(height: 1.7))),
+        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('بستن'))],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final names = <String>['کلید A', 'کلید B', 'کلید C'];
-    final accents = <Color>[kRed, kBlue, kPurple];
-    return Bg(
-      child: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(15, 18, 15, 24),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 520),
-            child: Glass(
-              padding: const EdgeInsets.fromLTRB(14, 18, 14, 16),
+    final c = colorsFor(widget.theme);
+    final entries = letterTemplates.entries.where((e) => query.isEmpty || e.key.contains(query) || e.value.contains(query)).toList();
+    final filteredLetters = letters.where((e) => query.isEmpty || e.title.contains(query) || e.body.contains(query)).toList();
+    return SafeArea(
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(18, 18, 18, 145),
+        children: [
+          Text('نامه‌های ${widget.cloud.myDisplayName} ↔ ${widget.cloud.otherDisplayName} 💌', style: const TextStyle(fontSize: 25, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 8),
+          Text('نامه دیگر یادداشت محلی نیست؛ هر نامه مستقیم برای همراهت ارسال و در دفتر مشترک نگهداری می‌شود.', style: TextStyle(color: Colors.white.withValues(alpha: .52), height: 1.55)),
+          const SizedBox(height: 14),
+          FilledButton.icon(
+            onPressed: widget.cloud.configured && !sending ? () => _compose() : null,
+            icon: const Icon(Icons.edit_rounded),
+            label: Text(widget.cloud.configured ? 'نوشتن نامه جدید' : 'ابتدا دفتر مشترک را متصل کن'),
+          ),
+          const SizedBox(height: 12),
+          TextField(onChanged: (v) => setState(() => query = v), decoration: const InputDecoration(prefixIcon: Icon(Icons.search_rounded), hintText: 'جست‌وجوی نامه...')),
+          const SizedBox(height: 20),
+          if (loading)
+            const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator()))
+          else if (filteredLetters.isNotEmpty) ...[
+            const Text('نامه‌های شما', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 10),
+            ...filteredLetters.reversed.map((letter) {
+              final mine = letter.senderId == myDeviceId;
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _Glass(
+                  accent: c.primary,
+                  child: ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    onTap: () => _openLetter(letter),
+                    leading: Icon(mine ? Icons.outbox_rounded : Icons.mark_email_unread_rounded, color: c.primary),
+                    title: Text(letter.title, style: const TextStyle(fontWeight: FontWeight.w900)),
+                    subtitle: Text(
+                      '${mine ? 'ارسال‌شده' : 'دریافتی'} • ${DateFormat('yyyy/MM/dd  HH:mm').format(letter.createdAt.toLocal())}\n${letter.body}',
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: Colors.white.withValues(alpha: .62), height: 1.45),
+                    ),
+                    trailing: Icon(letter.isRead ? Icons.done_all_rounded : Icons.mark_email_unread_rounded, color: letter.isRead ? c.primary : Colors.white38),
+                  ),
+                ),
+              );
+            }),
+            const SizedBox(height: 18),
+          ],
+          const Text('نمونه نامه‌ها', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 10),
+          ...entries.asMap().entries.map((entry) => _EnvelopeCard(
+                index: entry.key,
+                title: entry.value.key,
+                text: entry.value.value,
+                color: c.primary,
+                onSend: () => _compose(title: entry.value.key, body: entry.value.value),
+              )),
+        ],
+      ),
+    );
+  }
+}
+
+class _EnvelopeCard extends StatefulWidget {
+  const _EnvelopeCard({required this.index, required this.title, required this.text, required this.color, required this.onSend});
+  final int index;
+  final String title;
+  final String text;
+  final Color color;
+  final VoidCallback onSend;
+
+  @override
+  State<_EnvelopeCard> createState() => _EnvelopeCardState();
+}
+
+class _EnvelopeCardState extends State<_EnvelopeCard> with SingleTickerProviderStateMixin {
+  bool open = false;
+  late final AnimationController c = AnimationController(vsync: this, duration: const Duration(milliseconds: 520));
+  @override
+  void dispose() { c.dispose(); super.dispose(); }
+  void toggle() { setState(() => open = !open); if (open) { c.forward(); } else { c.reverse(); } }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: GestureDetector(
+        onTap: toggle,
+        child: TweenAnimationBuilder<double>(
+          tween: Tween(begin: 0, end: 1), duration: Duration(milliseconds: 300 + widget.index * 20), curve: Curves.easeOutCubic,
+          builder: (_, v, child) => Transform.translate(offset: Offset(0, (1 - v) * 10), child: Opacity(opacity: v, child: child)),
+          child: _Glass(
+            accent: widget.color,
+            child: AnimatedSize(
+              duration: const Duration(milliseconds: 420), curve: Curves.easeOutCubic,
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  const Center(child: Logo(size: 104)),
-                  const SizedBox(height: 14),
-                  const Text('ورود به دفتر مشترک', textAlign: TextAlign.center, style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
-                  const SizedBox(height: 6),
-                  const Text('کلید خودت را انتخاب کن و ادامه بده.', textAlign: TextAlign.center, style: TextStyle(color: Colors.white54, height: 1.5)),
-                  const SizedBox(height: 18),
+                children: [
+                  Row(children: [
+                    Container(width: 48, height: 48, decoration: BoxDecoration(color: widget.color.withValues(alpha: .10), shape: BoxShape.circle), child: Icon(open ? Icons.markunread_rounded : Icons.mail_rounded, color: widget.color)),
+                    const SizedBox(width: 12),
+                    Expanded(child: Text(widget.title, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16))),
+                    Icon(open ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded),
+                  ]),
+                  if (open) ...[
+                    const SizedBox(height: 12),
+                    Text(widget.text, style: const TextStyle(height: 1.6, color: Colors.white70)),
+                    const SizedBox(height: 12),
+                    Align(alignment: Alignment.centerLeft, child: FilledButton.icon(onPressed: widget.onSend, icon: const Icon(Icons.send_rounded), label: const Text('ویرایش و ارسال'))),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class SettingsTab extends StatefulWidget {
+  const SettingsTab({
+    super.key,
+    required this.storage,
+    required this.theme,
+    required this.cloud,
+    required this.trash,
+    required this.onTheme,
+    required this.onRefresh,
+    required this.onLockChange,
+  });
+  final StorageService storage;
+  final AppThemeChoice theme;
+  final CloudService cloud;
+  final List<NoteItem> trash;
+  final ValueChanged<AppThemeChoice> onTheme;
+  final VoidCallback onRefresh;
+  final VoidCallback onLockChange;
+  @override
+  State<SettingsTab> createState() => _SettingsTabState();
+}
+
+class _SettingsTabState extends State<SettingsTab> {
+  bool bio = false;
+  bool lock = false;
+  bool moodSending = false;
+  bool checkinsLoading = false;
+  String? selectedMood;
+  String? drawChoice;
+  final Set<String> selectedNeeds = <String>{};
+  final Map<String, int> moodCounts = <String, int>{};
+  final Map<String, int> needCounts = <String, int>{};
+  int drawYesCount = 0;
+  int drawNoCount = 0;
+  final List<String> _needs = const ['آرامش', 'حواس‌پرتی', 'حرف زدن', 'انرژی', 'تنهایی'];
+  StreamSubscription<void>? _checkinSub;
+
+  Future<void> _loadCheckins() async {
+    if (!widget.cloud.configured || checkinsLoading) return;
+    checkinsLoading = true;
+    try {
+      final data = await widget.cloud.fetchCheckins();
+      if (!mounted) return;
+      final moods = Map<String, dynamic>.from(data['moodCounts'] as Map? ?? const {});
+      final needs = Map<String, dynamic>.from(data['needCounts'] as Map? ?? const {});
+      final mineNeeds = (data['myNeeds'] as List? ?? const []).whereType<String>();
+      setState(() {
+        moodCounts
+          ..clear()
+          ..addAll(moods.map((k, v) => MapEntry(k, (v as num).toInt())));
+        needCounts
+          ..clear()
+          ..addAll(needs.map((k, v) => MapEntry(k, (v as num).toInt())));
+        selectedMood = data['myMood']?.toString();
+        drawChoice = data['myDrawChoice']?.toString();
+        selectedNeeds
+          ..clear()
+          ..addAll(mineNeeds);
+        drawYesCount = (data['drawCounts'] is Map ? (data['drawCounts']['yes'] as num?)?.toInt() : null) ?? 0;
+        drawNoCount = (data['drawCounts'] is Map ? (data['drawCounts']['no'] as num?)?.toInt() : null) ?? 0;
+      });
+    } catch (_) {
+      // Keep the local UI usable while offline.
+    } finally {
+      checkinsLoading = false;
+    }
+  }
+
+  Future<void> _sendMood(String mood) async {
+    if (moodSending) return;
+    if (!widget.cloud.configured) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('اول دفتر مشترک را یک‌بار متصل کن.')),
+        );
+      }
+      return;
+    }
+    setState(() => moodSending = true);
+    try {
+      await widget.cloud.saveMood(mood);
+      await _loadCheckins();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('حالت تو در دفتر مشترک ثبت شد ❤️')),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('ثبت حالت انجام نشد؛ اتصال دفتر مشترک را بررسی کن.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => moodSending = false);
+    }
+  }
+
+  Future<void> _chooseDrawChoice() async {
+    if (moodSending) return;
+    if (!widget.cloud.configured) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('اول دفتر مشترک را یک‌بار متصل کن.')),
+        );
+      }
+      return;
+    }
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: AppPalette.surface,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(18, 16, 18, 8),
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: Text('❤️ بکشم یا نکشم', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+              ),
+            ),
+            ListTile(
+              leading: Icon(Icons.favorite_rounded, color: cFor(context).primary),
+              title: const Text('❤️ بکشم'),
+              onTap: () => Navigator.pop(context, 'yes'),
+            ),
+            ListTile(
+              leading: Icon(Icons.favorite_border_rounded, color: cFor(context).primary),
+              title: const Text('❤️ نکشم'),
+              onTap: () => Navigator.pop(context, 'no'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (choice == null) return;
+    setState(() => moodSending = true);
+    try {
+      await widget.cloud.saveDrawChoice(choice);
+      await _loadCheckins();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('ثبت این حالت انجام نشد.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => moodSending = false);
+    }
+  }
+
+  Future<void> _toggleNeed(String need) async {
+    if (!widget.cloud.configured) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('اول دفتر مشترک را یک‌بار متصل کن.')),
+        );
+      }
+      return;
+    }
+    final next = Set<String>.from(selectedNeeds);
+    if (!next.add(need)) next.remove(need);
+    setState(() {
+      selectedNeeds
+        ..clear()
+        ..addAll(next);
+    });
+    try {
+      await widget.cloud.saveNeeds(next.toList());
+      await _loadCheckins();
+    } catch (_) {}
+  }
+
+  ThemeColors cFor(BuildContext context) => colorsFor(widget.theme);
+
+
+  @override
+  void initState() {
+    super.initState();
+    lock = widget.storage.loadPin() != null;
+    bio = widget.storage.loadBiometric();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadCheckins());
+    _checkinSub = widget.cloud.contentChanges.listen((_) => _loadCheckins());
+  }
+
+  @override
+  void dispose() {
+    _checkinSub?.cancel();
+    super.dispose();
+  }
+
+  Future<void> togglePin() async {
+    if (lock) {
+      await widget.storage.clearPin();
+      setState(() => lock = false);
+      widget.onLockChange();
+      return;
+    }
+    final ctl = TextEditingController();
+    final v = await showDialog<String>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('قفل برنامه'),
+        content: TextField(
+          controller: ctl,
+          keyboardType: TextInputType.number,
+          obscureText: true,
+          maxLength: 6,
+          decoration: const InputDecoration(hintText: 'PIN چهار تا شش رقمی'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('لغو'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, ctl.text),
+            child: const Text('ذخیره'),
+          ),
+        ],
+      ),
+    );
+    ctl.dispose();
+    if (v != null && v.length >= 4) {
+      await widget.storage.savePin(v);
+      setState(() => lock = true);
+      widget.onLockChange();
+    }
+  }
+
+  Future<void> toggleBio() async {
+    final auth = LocalAuthentication();
+    try {
+      if (!await auth.isDeviceSupported()) {
+        if (mounted)
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('بیومتریک روی این دستگاه پشتیبانی نمی‌شود.'),
+            ),
+          );
+        return;
+      }
+      final available = await auth.getAvailableBiometrics();
+      if (available.isEmpty) {
+        if (mounted)
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'هیچ اثر انگشت یا روش بیومتریکی روی دستگاه ثبت نشده است. ابتدا آن را در تنظیمات گوشی فعال کن.',
+              ),
+            ),
+          );
+        return;
+      }
+      if (bio) {
+        await widget.storage.saveBiometric(false);
+        if (mounted) setState(() => bio = false);
+        widget.onLockChange();
+        return;
+      }
+      final ok = await auth.authenticate(
+        localizedReason: 'برای فعال کردن قفل آبجی بزرگ و داداش کوچیکه احراز هویت کن',
+        biometricOnly: true,
+        sensitiveTransaction: true,
+        persistAcrossBackgrounding: true,
+      );
+      if (ok) {
+        await widget.storage.saveBiometric(true);
+        if (mounted) setState(() => bio = true);
+        widget.onLockChange();
+        if (mounted)
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('قفل بیومتریک فعال شد ❤️')),
+          );
+      }
+    } catch (_) {
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'احراز هویت انجام نشد. مطمئن شو اثر انگشت/Face Unlock روی گوشی فعال است.',
+            ),
+          ),
+        );
+    }
+  }
+
+  Future<void> backup() async {
+    final json = await widget.storage.exportJson();
+    final dir = await getTemporaryDirectory();
+    final file = File(
+      '${dir.path}/big_sister_backup_${DateTime.now().millisecondsSinceEpoch}.json',
+    );
+    await file.writeAsString(jsonEncode(json));
+    await SharePlus.instance.share(
+      ShareParams(
+        files: [XFile(file.path)],
+        subject: 'Big Sister & Little Brother Backup',
+      ),
+    );
+  }
+
+  Future<void> restore() async {
+    final picked = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['json'],
+    );
+    final path = picked?.files.single.path;
+    if (path == null) return;
+    try {
+      await widget.storage.importJson(
+        jsonDecode(await File(path).readAsString()) as Map<String, dynamic>,
+      );
+      for (final note in widget.storage.activeNotes()) {
+        if (note.reminderAt != null &&
+            note.reminderAt!.isAfter(DateTime.now())) {
+          await NotificationService.instance.scheduleNoteReminder(
+            noteId: note.id,
+            title: note.title,
+            when: note.reminderAt!,
+          );
+        }
+      }
+      widget.onRefresh();
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('پشتیبان کامل با موفقیت بازیابی شد ❤️')),
+        );
+    } catch (_) {
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('فایل پشتیبان معتبر نیست.')),
+        );
+    }
+  }
+
+  Future<void> deleteAllNotes() async {
+    if (widget.storage.activeNotes().isEmpty) {
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('یادداشتی برای حذف وجود ندارد.')),
+        );
+      return;
+    }
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (d) => AlertDialog(
+        title: const Text('حذف همه یادداشت‌ها'),
+        content: const Text(
+          'همه یادداشت‌ها، خاطره‌ها، نامه‌ها و چک‌لیست‌ها به سطل زباله منتقل شوند؟',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(d, false),
+            child: const Text('لغو'),
+          ),
+          FilledButton.tonal(
+            onPressed: () => Navigator.pop(d, true),
+            child: const Text('انتقال به سطل زباله'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final active = widget.storage.activeNotes();
+    await widget.storage.moveAllToTrash();
+    for (final n in active) {
+      await NotificationService.instance.cancelNoteReminder(n.id);
+    }
+    widget.onRefresh();
+    if (mounted)
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('همه موارد به سطل زباله منتقل شدند.')),
+      );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = colorsFor(widget.theme);
+    final names = {
+      AppThemeChoice.turquoise: 'فیروزه‌ای',
+      AppThemeChoice.sky: 'آسمانی',
+      AppThemeChoice.red: 'قرمز',
+      AppThemeChoice.blue: 'آبی',
+    };
+    return ColoredBox(
+      color: AppPalette.page,
+      child: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 145),
+          children: [
+            const Text(
+              'تنظیمات',
+              style: TextStyle(fontSize: 25, fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 18),
+            _Glass(
+              child: Column(
+                children: [
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: CircleAvatar(
+                      backgroundColor: c.primary.withValues(alpha: .10),
+                      child: Icon(Icons.favorite_rounded, color: c.primary),
+                    ),
+                    title: Text(
+                      '${widget.cloud.myDisplayName} ❤️',
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                    //subtitle: const Text(''),
+                    //trailing: const Icon(Icons.lock_outline_rounded),
+                  ),
+                  const Divider(),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: lock,
+                    onChanged: (_) => togglePin(),
+                    secondary: Icon(Icons.lock_rounded, color: c.primary),
+                    title: const Text('قفل PIN'),
+                    subtitle: Text(
+                      lock ? 'قفل PIN فعال است' : 'برای خصوصی‌تر شدن فعالش کن',
+                    ),
+                  ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: bio,
+                    onChanged: (_) => toggleBio(),
+                    secondary: Icon(
+                      Icons.fingerprint_rounded,
+                      color: c.secondary,
+                    ),
+                    title: const Text('قفل بیومتریک'),
+                    subtitle: const Text('اثر انگشت یا روش بیومتریک دستگاه'),
+                  ),
+                  const Divider(),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(Icons.sync_rounded, color: c.primary),
+                    title: Text(widget.cloud.sharedTitle),
+                    subtitle: Text(
+                      widget.cloud.configured
+                          ? (widget.cloud.online ? 'همگام‌سازی زنده فعال است' : 'دفتر متصل است؛ اتصال لحظه‌ای برقرار نیست')
+                          : 'یک ورود اولیه؛ بعد از آن نمایش و همگام‌سازی خودکار',
+                    ),
+                    trailing: Icon(Icons.chevron_left_rounded, color: c.primary),
+                    onTap: () async {
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => CloudSharedLoginScreen(storage: widget.storage, theme: widget.theme),
+                        ),
+                      );
+                      if (mounted) setState(() {});
+                      widget.onRefresh();
+                    },
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            _Glass(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   Row(
-                    children: List<Widget>.generate(3, (int index) {
-                      final id = 'person${index + 1}';
-                      final selected = role == id;
-                      final accent = accents[index];
+                    children: [
+                      Icon(Icons.favorite_rounded, color: c.primary),
+                      const SizedBox(width: 9),
+                      const Expanded(
+                        child: Text(
+                          'حالت من 💗',
+                          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
+                        ),
+                      ),
+                      if (moodSending)
+                        const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    'انتخاب‌ها در دفتر مشترک ذخیره می‌شوند.',
+                    style: const TextStyle(color: Colors.white60, height: 1.5),
+                  ),
+                  const SizedBox(height: 12),
+                  _MoodButton(
+                    emoji: '😞',
+                    label: 'حالم خوب نیست',
+                    color: c.primary,
+                    enabled: !moodSending,
+                    onTap: () => _sendMood('not_good'),
+                  ),
+                  const SizedBox(height: 8),
+                  _MoodButton(
+                    emoji: '😊',
+                    label: 'حالم خوبه',
+                    color: c.primary,
+                    enabled: !moodSending,
+                    onTap: () => _sendMood('good'),
+                  ),
+                  const SizedBox(height: 8),
+                  _MoodButton(
+                    emoji: '😍',
+                    label: 'خیلی خوشحالم',
+                    color: c.primary,
+                    enabled: !moodSending,
+                    onTap: () => _sendMood('happy'),
+                  ),
+                  const SizedBox(height: 8),
+                  _MoodButton(
+                    emoji: '😔',
+                    label: 'ناراحتم',
+                    color: c.primary,
+                    enabled: !moodSending,
+                    onTap: () => _sendMood('sad'),
+                  ),
+                  const SizedBox(height: 8),
+                  _MoodButton(
+                    emoji: '🥺',
+                    label: 'دلگیرم',
+                    color: c.primary,
+                    enabled: !moodSending,
+                    onTap: () => _sendMood('hurt'),
+                  ),
+                  const SizedBox(height: 8),
+                  _MoodButton(
+                    emoji: '❤️',
+                    label: drawChoice == null ? 'بکشم یا نکشم' : 'بکشم یا نکشم • ${drawChoice == 'yes' ? 'بکشم' : 'نکشم'}',
+                    color: c.accent,
+                    enabled: !moodSending,
+                    onTap: _chooseDrawChoice,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            _Glass(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'الان چی لازم دارم؟',
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'می‌توانی چند مورد را انتخاب کنی؛ انتخاب‌ها مشترک هستند.',
+                    style: TextStyle(color: Colors.white60, height: 1.5),
+                  ),
+                  const SizedBox(height: 8),
+                  ..._needs.map(
+                    (need) => CheckboxListTile(
+                      value: selectedNeeds.contains(need),
+                      onChanged: (_) => _toggleNeed(need),
+                      contentPadding: EdgeInsets.zero,
+                      activeColor: c.secondary,
+                      secondary: Icon(Icons.favorite_rounded, color: c.secondary, size: 20),
+                      title: Text(need),
+                      trailing: Text('${needCounts[need] ?? 0}', style: const TextStyle(color: Colors.white38)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            _Glass(
+              child: Column(
+                children: [
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(Icons.sports_esports_rounded, color: c.primary),
+                    title: const Text('بازی‌ها'),
+                    subtitle: const Text('بازی‌های کوتاه و قابل تکرار'),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => ThreePersonGamesScreen(theme: widget.theme)),
+                    ),
+                  ),
+                  const Divider(),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(Icons.perm_media_rounded, color: c.secondary),
+                    title: const Text('رسانه مشترک'),
+                    subtitle: const Text('عکس، صدا و آهنگ'),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => SharedMediaScreen(theme: widget.theme)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            const SizedBox(height: 14),
+            _Glass(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'چهار تم دارک',
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(height: 13),
+                  Row(
+                    children: AppThemeChoice.values.map((e) {
+                      final cc = colorsFor(e);
+                      final selected = e == widget.theme;
                       return Expanded(
                         child: Padding(
-                          padding: EdgeInsets.only(left: index == 2 ? 0 : 6),
-                          child: InkWell(
-                            onTap: () => setState(() => role = id),
-                            borderRadius: BorderRadius.circular(16),
+                          padding: const EdgeInsets.symmetric(horizontal: 3),
+                          child: GestureDetector(
+                            onTap: () => widget.onTheme(e),
                             child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 180),
-                              padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 4),
+                              duration: const Duration(milliseconds: 340),
+                              curve: Curves.easeOutBack,
+                              height: 92,
                               decoration: BoxDecoration(
-                                color: selected ? accent.withValues(alpha: .15) : const Color(0x22101018),
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(color: selected ? accent : Colors.white12, width: selected ? 1.4 : 1),
+                                color: cc.primary.withValues(
+                                  alpha: selected ? .15 : .06,
+                                ),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(
+                                  color: selected
+                                      ? cc.primary
+                                      : Colors.white.withValues(alpha: .06),
+                                  width: selected ? 2 : 1,
+                                ),
+                                boxShadow: selected
+                                    ? [
+                                        BoxShadow(
+                                          color: cc.primary.withValues(
+                                            alpha: .16,
+                                          ),
+                                          blurRadius: 22,
+                                        ),
+                                      ]
+                                    : const [],
                               ),
                               child: Column(
-                                children: <Widget>[
-                                  Icon(Icons.shield_outlined, color: selected ? accent : Colors.grey, size: 20),
-                                  const SizedBox(height: 5),
-                                  Text(names[index], style: TextStyle(fontWeight: FontWeight.w800, color: selected ? Colors.white : Colors.white70, fontSize: 13)),
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Container(
+                                    width: 36,
+                                    height: 36,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      gradient: LinearGradient(
+                                        colors: [
+                                          cc.primary,
+                                          cc.secondary,
+                                          cc.accent,
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 7),
+                                  Text(
+                                    names[e]!,
+                                    style: const TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
                                 ],
                               ),
                             ),
                           ),
                         ),
                       );
-                    }),
+                    }).toList(),
                   ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: password,
-                    obscureText: true,
-                    textDirection: TextDirection.ltr,
-                    decoration: const InputDecoration(labelText: 'رمز کلید', prefixIcon: Icon(Icons.key_rounded)),
-                  ),
-                  if (const String.fromEnvironment('KALANTAR_API_URL', defaultValue: '').isEmpty) ...<Widget>[
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: server,
-                      textDirection: TextDirection.ltr,
-                      keyboardType: TextInputType.url,
-                      decoration: const InputDecoration(labelText: 'آدرس سرور', prefixIcon: Icon(Icons.dns_outlined)),
-                    ),
-                  ],
-                  const SizedBox(height: 14),
-                  FilledButton.icon(
-                    onPressed: busy ? null : submit,
-                    icon: busy ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.login),
-                    label: const Padding(padding: EdgeInsets.symmetric(vertical: 13), child: Text('ورود به کلانتر')),
-                  ),
-                  if (error.isNotEmpty) ...<Widget>[
-                    const SizedBox(height: 10),
-                    Text(error, textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFFFF7B90), height: 1.5)),
-                  ],
                 ],
               ),
             ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-String friendlyError(Object error) {
-  final String text = error.toString();
-  if (text.contains('invalid_login')) return 'رمز کلید ناشناس اشتباه است.';
-  if (text.contains('server_credentials_missing')) return 'رمزهای حساب روی Railway کامل نشده‌اند.';
-  if (text.contains('connection') || text.contains('SocketException')) return 'ارتباط با Railway برقرار نشد.';
-  return 'ورود انجام نشد؛ تنظیمات سرور را بررسی کن.';
-}
-
-class HomePage extends StatefulWidget {
-  const HomePage({super.key, required this.onNavigate});
-  final ValueChanged<int> onNavigate;
-
-  @override
-  State<HomePage> createState() => _HomePageState();
-}
-
-class _HomePageState extends State<HomePage> {
-  final title = TextEditingController();
-  final body = TextEditingController();
-  List<Map<String, dynamic>> notes = <Map<String, dynamic>>[];
-  StreamSubscription<void>? changes;
-
-  @override
-  void initState() {
-    super.initState();
-    loadNotes();
-    changes = CloudService.instance.contentChanges.stream.listen((_) => loadNotes());
-  }
-
-  @override
-  void dispose() {
-    title.dispose();
-    body.dispose();
-    changes?.cancel();
-    super.dispose();
-  }
-
-  Future<void> loadNotes() async {
-    try {
-      final data = await CloudService.instance.fetchSharedNotes();
-      if (mounted) setState(() => notes = data);
-    } catch (_) {}
-  }
-
-  Future<void> addNote() async {
-    title.clear();
-    body.clear();
-    final bool? ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('یادداشت مشترک'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            TextField(controller: title, decoration: const InputDecoration(labelText: 'عنوان')),
-            const SizedBox(height: 10),
-            TextField(controller: body, maxLines: 5, decoration: const InputDecoration(labelText: 'متن')),
-          ],
-        ),
-        actions: <Widget>[
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('لغو')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('ذخیره')),
-        ],
-      ),
-    );
-    if (ok != true || body.text.trim().isEmpty) return;
-    final String now = DateTime.now().toUtc().toIso8601String();
-    final newNote = <String, dynamic>{
-      'id': DateTime.now().microsecondsSinceEpoch.toString(),
-      'title': title.text.trim(),
-      'body': body.text.trim(),
-      'createdAt': now,
-      'updatedAt': now,
-    };
-    await CloudService.instance.saveSharedNotes(<Map<String, dynamic>>[...notes, newNote]);
-    await loadNotes();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(18, 12, 18, 110),
-      children: <Widget>[
-        const PageHeader(title: 'صبح بخیر داداش کوچیکه ❤️', subtitle: 'یادداشت‌های خصوصی و مشترک'),
-        const SizedBox(height: 14),
-        Glass(
-          padding: const EdgeInsets.fromLTRB(16, 15, 16, 14),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(shape: BoxShape.circle, color: kBlue.withValues(alpha: .14)),
-                child: const Icon(Icons.auto_awesome, color: kBlue, size: 20),
-              ),
-              const SizedBox(width: 10),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text('جمله امروز', style: TextStyle(fontWeight: FontWeight.w900, color: kBlue)),
-                    SizedBox(height: 7),
-                    Text('آرام‌آرام هم می‌شود به رویاهای بزرگ رسید.', style: TextStyle(fontSize: 16, height: 1.55, fontWeight: FontWeight.w700)),
-                    SizedBox(height: 7),
-                    Text('یک قدم کوچک هم مهم است.', style: TextStyle(color: Colors.white54, fontSize: 11.5)),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: <Widget>[
-            Expanded(child: MetricCard(title: 'یادداشت', value: '${notes.length}', icon: Icons.sticky_note_2_outlined, color: kBlue)),
-            const SizedBox(width: 8),
-            const Expanded(child: MetricCard(title: 'حال خوب', value: '0', icon: Icons.favorite_rounded, color: kRed)),
-            const SizedBox(width: 8),
-            const Expanded(child: MetricCard(title: 'یادآوری', value: '0', icon: Icons.notifications_none_rounded, color: Color(0xFFFFC332))),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Glass(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-          child: Row(
-            children: <Widget>[
-              const Icon(Icons.favorite_border_rounded, color: kRed, size: 25),
-              const SizedBox(width: 10),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text('پیام حال خوب', style: TextStyle(fontWeight: FontWeight.w900)),
-                    SizedBox(height: 4),
-                    Text('امروز برای خودت یک اتفاق خوب ثبت کن.', style: TextStyle(color: Colors.white70, fontSize: 12.5)),
-                  ],
-                ),
-              ),
-              Icon(Icons.chevron_left_rounded, color: Colors.white.withValues(alpha: .45)),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: <Widget>[
-            Expanded(child: QuickButton(title: 'حال من', icon: Icons.favorite, color: kRed, onTap: () => widget.onNavigate(2))),
-            const SizedBox(width: 10),
-            Expanded(child: QuickButton(title: 'بازی', icon: Icons.sports_esports, color: kBlue, onTap: () => widget.onNavigate(3))),
-            const SizedBox(width: 10),
-            Expanded(child: QuickButton(title: 'رسانه', icon: Icons.perm_media, color: kPurple, onTap: () => widget.onNavigate(4))),
-          ],
-        ),
-        const SizedBox(height: 14),
-        Glass(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              Row(
-                children: <Widget>[
-                  const Expanded(child: Text('دفتر مشترک', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w900))),
-                  IconButton(onPressed: addNote, icon: const Icon(Icons.add_circle_outline, color: kPurple)),
-                ],
-              ),
-              const SizedBox(height: 5),
-              if (notes.isEmpty)
-                const Text('هنوز یادداشت مشترکی ثبت نشده است.', style: TextStyle(color: Colors.white54))
-              else
-                ...notes.take(5).map(
-                  (Map<String, dynamic> note) => Container(
-                    margin: const EdgeInsets.only(bottom: 9),
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(color: const Color(0x221A1724), borderRadius: BorderRadius.circular(16)),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Text(note['title']?.toString().isNotEmpty == true ? note['title'].toString() : 'بدون عنوان', style: const TextStyle(fontWeight: FontWeight.w800)),
-                        const SizedBox(height: 4),
-                        Text(note['body']?.toString() ?? '', maxLines: 3, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70, height: 1.5)),
-                      ],
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class QuickButton extends StatelessWidget {
-  const QuickButton({super.key, required this.title, required this.icon, required this.color, required this.onTap});
-  final String title;
-  final IconData icon;
-  final Color color;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
-      child: Glass(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        child: Column(
-          children: <Widget>[
-            Icon(icon, color: color, size: 24),
-            const SizedBox(height: 6),
-            Text(title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 11.5)),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class MetricCard extends StatelessWidget {
-  const MetricCard({super.key, required this.title, required this.value, required this.icon, required this.color});
-  final String title;
-  final String value;
-  final IconData icon;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Glass(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-      child: Column(
-        children: <Widget>[
-          Icon(icon, color: color, size: 20),
-          const SizedBox(height: 6),
-          Text(value, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900)),
-          const SizedBox(height: 2),
-          Text(title, style: const TextStyle(color: Colors.white54, fontSize: 10.5)),
-        ],
-      ),
-    );
-  }
-}
-
-class ChatPage extends StatefulWidget {
-  const ChatPage({super.key});
-
-  @override
-  State<ChatPage> createState() => _ChatPageState();
-}
-
-class _ChatPageState extends State<ChatPage> {
-  final input = TextEditingController();
-  final scroll = ScrollController();
-  final picker = ImagePicker();
-  final recorder = AudioRecorder();
-  final player = AudioPlayer();
-  final List<ChatMessage> messages = <ChatMessage>[];
-  StreamSubscription<ChatMessage>? subscription;
-  bool loading = true;
-  bool sending = false;
-  bool recording = false;
-  String? playingId;
-
-  @override
-  void initState() {
-    super.initState();
-    loadMessages();
-    subscription = CloudService.instance.incomingMessages.stream.listen((ChatMessage message) {
-      if (messages.any((ChatMessage item) => item.id == message.id)) return;
-      if (mounted) setState(() => messages.add(message));
-      scrollBottom();
-    });
-  }
-
-  @override
-  void dispose() {
-    subscription?.cancel();
-    input.dispose();
-    scroll.dispose();
-    recorder.dispose();
-    player.dispose();
-    super.dispose();
-  }
-
-  Future<void> loadMessages() async {
-    try {
-      final List<ChatMessage> loaded = await CloudService.instance.fetchMessages();
-      if (mounted) setState(() { messages..clear()..addAll(loaded); loading = false; });
-      scrollBottom(false);
-    } catch (_) {
-      if (mounted) setState(() => loading = false);
-    }
-  }
-
-  void scrollBottom([bool animate = true]) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!scroll.hasClients) return;
-      final double target = scroll.position.maxScrollExtent;
-      if (animate) {
-        scroll.animateTo(target, duration: const Duration(milliseconds: 240), curve: Curves.easeOut);
-      } else {
-        scroll.jumpTo(target);
-      }
-    });
-  }
-
-  Future<void> sendText() async {
-    final String text = input.text.trim();
-    if (text.isEmpty || sending) return;
-    setState(() => sending = true);
-    input.clear();
-    try {
-      final ChatMessage message = await CloudService.instance.sendText(text);
-      if (mounted && !messages.any((ChatMessage item) => item.id == message.id)) setState(() => messages.add(message));
-      scrollBottom();
-    } catch (_) {
-      input.text = text;
-      showSnack('ارسال انجام نشد.');
-    } finally {
-      if (mounted) setState(() => sending = false);
-    }
-  }
-
-  Future<void> pickImage() async {
-    final XFile? file = await picker.pickImage(source: ImageSource.gallery, imageQuality: 88);
-    if (file != null) await sendFile(file.path, 'image');
-  }
-
-  Future<void> pickFile() async {
-    final FilePickerResult? result = await FilePicker.platform.pickFiles(type: FileType.any);
-    final String? path = result?.files.single.path;
-    if (path != null) await sendFile(path, 'file');
-  }
-
-  Future<void> toggleRecord() async {
-    if (recording) {
-      final String? path = await recorder.stop();
-      if (mounted) setState(() => recording = false);
-      if (path != null) await sendFile(path, 'audio');
-      return;
-    }
-    if (!await recorder.hasPermission()) {
-      showSnack('مجوز میکروفون لازم است.');
-      return;
-    }
-    final dir = await getTemporaryDirectory();
-    final path = '${dir.path}/chat_${DateTime.now().millisecondsSinceEpoch}.m4a';
-    await recorder.start(const RecordConfig(), path: path);
-    if (mounted) setState(() => recording = true);
-  }
-
-  Future<void> sendFile(String path, String kind) async {
-    if (sending) return;
-    setState(() => sending = true);
-    try {
-      final ChatMessage message = await CloudService.instance.sendAttachment(path: path, kind: kind);
-      if (mounted && !messages.any((ChatMessage item) => item.id == message.id)) setState(() => messages.add(message));
-      scrollBottom();
-    } catch (_) {
-      showSnack('فایل ارسال نشد.');
-    } finally {
-      if (mounted) setState(() => sending = false);
-    }
-  }
-
-  Future<void> playAudio(ChatMessage message) async {
-    if (!message.hasAttachment) return;
-    try {
-      final List<int> bytes = await CloudService.instance.downloadMediaBytes(message.attachmentId!);
-      await player.play(BytesSource(Uint8List.fromList(bytes)));
-      if (mounted) setState(() => playingId = message.id);
-    } catch (_) {
-      showSnack('پخش ممکن نشد.');
-    }
-  }
-
-  void showSnack(String text) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: <Widget>[
-        const Padding(padding: EdgeInsets.fromLTRB(18, 12, 18, 8), child: PageHeader(title: 'چت مشترک', subtitle: 'پیام‌ها در دفتر مشترک • نمایش «ناشناس»')),
-        Expanded(
-          child: loading
-              ? const Center(child: CircularProgressIndicator())
-              : ListView.builder(
-                  controller: scroll,
-                  padding: const EdgeInsets.fromLTRB(14, 8, 14, 14),
-                  itemCount: messages.length,
-                  itemBuilder: (_, int index) {
-                    final ChatMessage message = messages[index];
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 10),
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: const Color(0xDD080910),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: Colors.white10),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          const Text('پیام ناشناس', style: TextStyle(color: Colors.white54, fontSize: 11, fontWeight: FontWeight.w700)),
-                          if (message.body.isNotEmpty) ...<Widget>[
-                            const SizedBox(height: 5),
-                            Text(message.body, style: const TextStyle(height: 1.5)),
-                          ],
-                          if (message.type == 'image' && message.hasAttachment)
-                            const Padding(padding: EdgeInsets.only(top: 8), child: Icon(Icons.image_outlined, color: kBlue, size: 30)),
-                          if (message.type == 'audio' && message.hasAttachment)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 8),
-                              child: TextButton.icon(
-                                onPressed: () => playAudio(message),
-                                icon: Icon(playingId == message.id ? Icons.stop_circle : Icons.play_circle_fill),
-                                label: Text(playingId == message.id ? 'در حال پخش' : 'پخش صدا'),
-                              ),
-                            ),
-                          if (message.attachmentName != null)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 4),
-                              child: Text(message.attachmentName!, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white38, fontSize: 11)),
-                            ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-        ),
-        SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-            child: Glass(
-              padding: const EdgeInsets.all(7),
-              child: Row(
-                children: <Widget>[
-                  IconButton(onPressed: sending ? null : pickImage, icon: const Icon(Icons.image_outlined, color: kBlue)),
-                  IconButton(onPressed: sending ? null : toggleRecord, icon: Icon(recording ? Icons.stop_circle : Icons.mic_none, color: recording ? kRed : Colors.grey)),
-                  IconButton(onPressed: sending ? null : pickFile, icon: const Icon(Icons.attach_file, color: Colors.grey)),
-                  Expanded(child: TextField(controller: input, maxLines: 4, minLines: 1, onSubmitted: (_) => sendText(), decoration: const InputDecoration(hintText: 'پیامت را بنویس...', border: InputBorder.none, enabledBorder: InputBorder.none, focusedBorder: InputBorder.none))),
-                  IconButton(onPressed: sending ? null : sendText, icon: const Icon(Icons.send_rounded, color: kPurple)),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class CheckInPage extends StatefulWidget {
-  const CheckInPage({super.key});
-
-  @override
-  State<CheckInPage> createState() => _CheckInPageState();
-}
-
-class _CheckInPageState extends State<CheckInPage> {
-  static const Map<String, String> moods = <String, String>{
-    'not_good': 'حالم خوب نیست',
-    'good': 'حالم خوبه',
-    'happy': 'خیلی خوشحالم',
-    'sad': 'ناراحتم',
-    'hurt': 'دلگیرم',
-    'draw_or_not': 'بکشم یا نکشم',
-  };
-  static const List<String> needsList = <String>['آرامش', 'حواس‌پرتی', 'حرف زدن', 'انرژی', 'تنهایی'];
-
-  final Set<String> selectedNeeds = <String>{};
-  String? selectedMood;
-  String? drawOrNotChoice;
-  Map<String, int> moodCounts = <String, int>{};
-  Map<String, int> needCounts = <String, int>{};
-  bool reorderMode = false;
-
-  @override
-  void initState() {
-    super.initState();
-    load();
-  }
-
-  Future<void> load() async {
-    try {
-      final Map<String, dynamic> data = await CloudService.instance.fetchCheckins();
-      if (!mounted) return;
-      setState(() {
-        moodCounts = Map<String, int>.from(data['moodCounts'] as Map? ?? const <String, int>{});
-        needCounts = Map<String, int>.from(data['needCounts'] as Map? ?? const <String, int>{});
-      });
-    } catch (_) {}
-  }
-
-  Future<void> chooseMood(String mood) async {
-    if (mood == 'draw_or_not') {
-      final String? result = await showDialog<String>(
-        context: context,
-        builder: (BuildContext context) => AlertDialog(
-          title: const Text('❤️ بکشم یا نکشم'),
-          actions: <Widget>[
-            TextButton(onPressed: () => Navigator.pop(context, 'بکشم'), child: const Text('❤️ بکشم')),
-            TextButton(onPressed: () => Navigator.pop(context, 'نکشم'), child: const Text('❤️ نکشم')),
-          ],
-        ),
-      );
-      if (result != null) {
-        setState(() {
-          selectedMood = mood;
-          drawOrNotChoice = result;
-        });
-        await CloudService.instance.saveMood('draw_or_not_$result');
-        await load();
-      }
-      return;
-    }
-    setState(() => selectedMood = mood);
-    await CloudService.instance.saveMood(mood);
-    await load();
-  }
-
-  Future<void> toggleNeed(String need) async {
-    setState(() {
-      if (selectedNeeds.contains(need)) {
-        selectedNeeds.remove(need);
-      } else {
-        selectedNeeds.add(need);
-      }
-    });
-    await CloudService.instance.saveNeeds(selectedNeeds.toList());
-    await load();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(18, 12, 18, 110),
-      children: <Widget>[
-        const PageHeader(title: 'حالم الان', subtitle: 'انتخاب‌ها مشترک هستند؛ نام یا کلید هیچ‌کس نشان داده نمی‌شود.'),
-        const SizedBox(height: 14),
-        Glass(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              const Text('الان چه حسی دارم؟', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w900)),
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: moods.entries.map((MapEntry<String, String> entry) {
-                  return FilterChip(
-                    selected: selectedMood == entry.key,
-                    selectedColor: const Color(0x55FF3B62),
-                    onSelected: (_) => chooseMood(entry.key),
-                    label: Text('❤️ ${entry.value}'),
-                  );
-                }).toList(),
-              ),
-              if (drawOrNotChoice != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 10),
-                  child: Text('❤️ بکشم یا نکشم: $drawOrNotChoice'),
-                ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 14),
-        Glass(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              Row(
-                children: <Widget>[
-                  const Expanded(child: Text('الان چی لازم دارم؟', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w900))),
-                  Switch(value: reorderMode, onChanged: (bool value) => setState(() => reorderMode = value)),
-                ],
-              ),
-              const Text('حالت «بکش و نکش» ترتیب نیازهای انتخاب‌شده را قابل جابه‌جایی می‌کند.', style: TextStyle(color: Colors.white54, height: 1.45)),
-              const SizedBox(height: 9),
-              if (!reorderMode)
-                ...needsList.map(
-                  (String need) => CheckboxListTile(
-                    value: selectedNeeds.contains(need),
-                    onChanged: (_) => toggleNeed(need),
+            const SizedBox(height: 14),
+            _Glass(
+              child: Column(
+                children: [
+                  ListTile(
                     contentPadding: EdgeInsets.zero,
-                    activeColor: kBlue,
-                    title: Text(need),
-                    secondary: Text('${needCounts[need] ?? 0}', style: const TextStyle(color: Colors.white38)),
+                    leading: Icon(
+                      Icons.calendar_month_rounded,
+                      color: c.primary,
+                    ),
+                    title: const Text('تقویم خاطرات'),
+                    subtitle: const Text('تمام خاطره‌ها را بر اساس روز ببین'),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => CalendarFullScreen(
+                          storage: widget.storage,
+                          theme: widget.theme,
+                        ),
+                      ),
+                    ),
                   ),
-                )
-              else
-                ReorderableListView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: selectedNeeds.length,
-                  itemBuilder: (_, int index) {
-                    final String item = selectedNeeds.elementAt(index);
-                    return Container(
-                      key: ValueKey<String>(item),
-                      margin: const EdgeInsets.only(bottom: 7),
-                      decoration: BoxDecoration(color: const Color(0x221A1724), borderRadius: BorderRadius.circular(14)),
-                      child: ListTile(leading: const Icon(Icons.drag_indicator, color: Colors.grey), title: Text(item)),
-                    );
-                  },
-                  onReorderItem: (int oldIndex, int newIndex) async {
-                    final List<String> list = selectedNeeds.toList();
-                    final String moved = list.removeAt(oldIndex);
-                    list.insert(newIndex, moved);
-                    setState(() { selectedNeeds..clear()..addAll(list); });
-                    await CloudService.instance.saveNeeds(list);
-                  },
-                ),
-              if (reorderMode)
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton(onPressed: () => setState(() => reorderMode = false), child: const Text('پایان جابه‌جایی')),
-                ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 14),
-        Glass(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              const Text('نمای مشترک', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
-              const SizedBox(height: 8),
-              ...moods.entries.map(
-                (MapEntry<String, String> entry) => SharedCountRow(label: entry.value, count: moodCounts[entry.key] ?? 0, icon: Icons.favorite, color: kRed),
+                  const Divider(),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(
+                      Icons.delete_sweep_rounded,
+                      color: Colors.redAccent,
+                    ),
+                    title: Text('سطل زباله (${widget.trash.length})'),
+                    subtitle: const Text('بازیابی یا حذف دائمی یادداشت‌ها'),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => TrashScreen(
+                          storage: widget.storage,
+                          theme: widget.theme,
+                          onRefresh: widget.onRefresh,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              const Divider(color: Colors.white10),
-              ...needsList.map(
-                (String item) => SharedCountRow(label: item, count: needCounts[item] ?? 0, icon: Icons.check_circle_outline, color: kBlue),
+            ),
+            const SizedBox(height: 14),
+            _Glass(
+              child: ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.favorite_rounded, color: c.primary),
+                title: Text('برای ${widget.cloud.myDisplayName} ❤️🫂'),
+                subtitle: const Text('نامه‌ها و جمله‌هایی که مخصوص او هستند'),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => SisterSpaceScreen(
+                      storage: widget.storage,
+                      theme: widget.theme,
+                      cloud: CloudService.instance,
+                      onSaved: widget.onRefresh,
+                    ),
+                  ),
+                ),
               ),
-            ],
-          ),
+            ),
+            const SizedBox(height: 14),
+            _Glass(
+              child: Column(
+                children: [
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(Icons.backup_rounded, color: c.primary),
+                    title: const Text('پشتیبان‌گیری کامل'),
+                    subtitle: const Text('یادداشت، عکس، صدا، Tag و تنظیمات'),
+                    onTap: backup,
+                  ),
+                  const Divider(),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(Icons.restore_rounded, color: c.primary),
+                    title: const Text('بازیابی پشتیبان'),
+                    subtitle: const Text('فایل JSON پشتیبان را وارد کن'),
+                    onTap: restore,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            _Glass(
+              child: ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(
+                  Icons.delete_sweep_rounded,
+                  color: Colors.redAccent,
+                ),
+                title: const Text('حذف همه موارد'),
+                subtitle: const Text(
+                  'همه یادداشت‌ها، خاطره‌ها، نامه‌ها و چک‌لیست‌ها را به سطل زباله منتقل کن',
+                ),
+                onTap: deleteAllNotes,
+              ),
+            ),
+            const SizedBox(height: 14),
+            _Glass(
+              child: Column(
+                children: [
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(Icons.bar_chart_rounded, color: c.primary),
+                    title: const Text('آمار و فعالیت'),
+                    subtitle: const Text(
+                      'تعداد یادداشت‌ها، نامه‌ها، خاطره‌ها و صوت‌ها',
+                    ),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => StatsScreen(
+                          storage: widget.storage,
+                          theme: widget.theme,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const Divider(),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(
+                      Icons.picture_as_pdf_rounded,
+                      color: c.secondary,
+                    ),
+                    title: const Text('خروجی و اشتراک‌گذاری'),
+                    subtitle: const Text('TXT و PDF برای یادداشت‌ها'),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ExportScreen(
+                          storage: widget.storage,
+                          theme: widget.theme,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            _Glass(
+              child: Column(
+                children: [
+                  Icon(Icons.favorite_rounded, size: 42, color: c.primary),
+                  const SizedBox(height: 9),
+                  const Text(
+                    'For Big Sister & Little Brother ❤️🫂',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(height: 7),
+                  const Text(
+                    'یک دفتر امن برای حرف‌هایی که شاید همیشه فرصت گفتنشان را نداری.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.white54, height: 1.5),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }
 
-class SharedCountRow extends StatelessWidget {
-  const SharedCountRow({super.key, required this.label, required this.count, required this.icon, required this.color});
-  final String label;
-  final int count;
-  final IconData icon;
-  final Color color;
+
+
+class ThreePersonGamesScreen extends StatefulWidget {
+  const ThreePersonGamesScreen({super.key, required this.theme});
+  final AppThemeChoice theme;
+
+  @override
+  State<ThreePersonGamesScreen> createState() => _ThreePersonGamesScreenState();
+}
+
+class _ThreePersonGamesScreenState extends State<ThreePersonGamesScreen> {
+  int selectedGame = -1;
 
   @override
   Widget build(BuildContext context) {
+    final c = colorsFor(widget.theme);
+    if (selectedGame == 0) {
+      return _ReactionGame(theme: widget.theme, onBack: () => setState(() => selectedGame = -1));
+    }
+    if (selectedGame == 1) {
+      return _MemoryMatchGame(theme: widget.theme, onBack: () => setState(() => selectedGame = -1));
+    }
+    if (selectedGame == 2) {
+      return _QuickMathGame(theme: widget.theme, onBack: () => setState(() => selectedGame = -1));
+    }
+    if (selectedGame == 3) {
+      return _SequenceGame(theme: widget.theme, onBack: () => setState(() => selectedGame = -1));
+    }
+    if (selectedGame == 4) {
+      return _FocusGame(theme: widget.theme, onBack: () => setState(() => selectedGame = -1));
+    }
+    if (selectedGame == 5) {
+      return _FindPairGame(theme: widget.theme, onBack: () => setState(() => selectedGame = -1));
+    }
+    return Scaffold(
+      backgroundColor: AppPalette.page,
+      appBar: AppBar(title: const Text('بازی‌ها')),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 32),
+        children: [
+          _Glass(
+            accent: c.primary,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'بازی‌های بی‌پایان',
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: c.primary),
+                ),
+                const SizedBox(height: 7),
+                const Text(
+                  'بازی‌ها مرحله‌به‌مرحله سخت‌تر می‌شوند؛ هر وقت خواستی یک بازی دیگر انتخاب کن و ادامه بده.',
+                  style: TextStyle(color: Colors.white70, height: 1.55),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          _gameTile(
+            context,
+            icon: Icons.flash_on_rounded,
+            title: 'واکنش برق‌آسا',
+            subtitle: 'وقتی چراغ روشن شد، سریع بزن و رکوردت را بساز.',
+            accent: c.accent,
+            index: 0,
+          ),
+          _gameTile(
+            context,
+            icon: Icons.grid_view_rounded,
+            title: 'حافظه جفت‌ها',
+            subtitle: 'کارت‌ها را به خاطر بسپار و جفت‌ها را با کمترین حرکت پیدا کن.',
+            accent: c.secondary,
+            index: 1,
+          ),
+          _gameTile(
+            context,
+            icon: Icons.calculate_rounded,
+            title: 'چالش ذهن',
+            subtitle: 'حساب‌های کوتاه با سختی رو‌به‌افزایش و امتیازهای زنجیره‌ای.',
+            accent: c.primary,
+            index: 2,
+          ),
+          _gameTile(
+            context,
+            icon: Icons.looks_one_rounded,
+            title: 'ترتیب سریع',
+            subtitle: 'عددها را از ۱ تا آخر پیدا کن؛ هر مرحله سریع‌تر و شلوغ‌تر می‌شود.',
+            accent: const Color(0xFFFF4D67),
+            index: 3,
+          ),
+          _gameTile(
+            context,
+            icon: Icons.palette_rounded,
+            title: 'تمرکز رنگی',
+            subtitle: 'رنگ درست را از بین گزینه‌های گیج‌کننده انتخاب کن و کمبو بساز.',
+            accent: const Color(0xFF33A7FF),
+            index: 4,
+          ),
+          _gameTile(
+            context,
+            icon: Icons.style_rounded,
+            title: 'پیدا کردن دو کارت مثل هم',
+            subtitle: 'در بین کارت‌های مختلف فقط دو کارت یکسان را پیدا کن؛ هر مرحله سخت‌تر می‌شود.',
+            accent: const Color(0xFFFF4D67),
+            index: 5,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _gameTile(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Color accent,
+    required int index,
+  }) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5),
-      child: Row(
-        children: <Widget>[
-          Icon(icon, size: 18, color: color),
-          const SizedBox(width: 8),
-          Expanded(child: Text(label)),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-            decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(999)),
-            child: Text('$count نفر', style: TextStyle(color: color, fontWeight: FontWeight.w800)),
+      padding: const EdgeInsets.only(bottom: 11),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(22),
+        onTap: () => setState(() => selectedGame = index),
+        child: _Glass(
+          accent: accent,
+          child: Row(
+            children: [
+              Container(
+                width: 54,
+                height: 54,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(17),
+                  color: accent.withValues(alpha: .13),
+                  border: Border.all(color: accent.withValues(alpha: .42)),
+                ),
+                child: Icon(icon, color: accent, size: 29),
+              ),
+              const SizedBox(width: 13),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+                    const SizedBox(height: 4),
+                    Text(subtitle, style: const TextStyle(color: Colors.white60, height: 1.4)),
+                  ],
+                ),
+              ),
+              Icon(Icons.arrow_back_ios_new_rounded, color: accent, size: 17),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _GameScaffold extends StatelessWidget {
+  const _GameScaffold({required this.theme, required this.title, required this.child, required this.onBack});
+  final AppThemeChoice theme;
+  final String title;
+  final Widget child;
+  final VoidCallback onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppPalette.page,
+      appBar: AppBar(
+        title: Text(title),
+        leading: IconButton(icon: const Icon(Icons.arrow_back_rounded), onPressed: onBack),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+        children: [child],
+      ),
+    );
+  }
+}
+
+class _ReactionGame extends StatefulWidget {
+  const _ReactionGame({required this.theme, required this.onBack});
+  final AppThemeChoice theme;
+  final VoidCallback onBack;
+
+  @override
+  State<_ReactionGame> createState() => _ReactionGameState();
+}
+
+class _ReactionGameState extends State<_ReactionGame> {
+  final math.Random random = math.Random();
+  Timer? timer;
+  Stopwatch? stopwatch;
+  bool waiting = false;
+  bool ready = false;
+  int attempts = 0;
+  int score = 0;
+  int best = 9999;
+  int last = 0;
+  int level = 1;
+  int? _lastDelay;
+
+  @override
+  void dispose() {
+    timer?.cancel();
+    stopwatch?.stop();
+    super.dispose();
+  }
+
+  void start() {
+    timer?.cancel();
+    stopwatch?.stop();
+    setState(() {
+      waiting = true;
+      ready = false;
+      last = 0;
+    });
+
+    final minDelay = math.max(360, 1050 - (level - 1) * 55);
+    final maxDelay = math.max(minDelay + 180, 1550 - (level - 1) * 60);
+    int delay;
+    do {
+      delay = minDelay + random.nextInt(maxDelay - minDelay + 1);
+    } while (_lastDelay != null && delay == _lastDelay && maxDelay > minDelay);
+    _lastDelay = delay;
+
+    timer = Timer(Duration(milliseconds: delay), () {
+      if (!mounted || !waiting) return;
+      stopwatch = Stopwatch()..start();
+      setState(() {
+        waiting = false;
+        ready = true;
+      });
+    });
+  }
+
+  void tap() {
+    if (!waiting && !ready) {
+      start();
+      return;
+    }
+    if (waiting) {
+      timer?.cancel();
+      setState(() {
+        waiting = false;
+        ready = false;
+        score = math.max(0, score - math.min(6, level));
+        last = -1;
+      });
+      return;
+    }
+    if (!ready || stopwatch == null) return;
+
+    stopwatch!.stop();
+    final ms = stopwatch!.elapsedMilliseconds;
+    final speedBonus = math.max(20, 1250 - ms);
+    setState(() {
+      attempts += 1;
+      last = ms;
+      best = math.min(best, ms);
+      score += speedBonus + level * 10;
+      ready = false;
+      if (attempts % 3 == 0) level += 1;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = colorsFor(widget.theme);
+    return _GameScaffold(
+      theme: widget.theme,
+      title: 'واکنش برق‌آسا',
+      onBack: widget.onBack,
+      child: Column(
+        children: [
+          _scoreBar(c, 'امتیاز $score', 'مرحله $level • رکورد ${best == 9999 ? '—' : '${best}ms'}'),
+          const SizedBox(height: 12),
+          _Glass(
+            accent: ready ? const Color(0xFF28E38A) : c.primary,
+            child: InkWell(
+              onTap: tap,
+              borderRadius: BorderRadius.circular(24),
+              child: Container(
+                height: 300,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(24),
+                  gradient: LinearGradient(
+                    colors: ready
+                        ? [const Color(0xFF0C5B3A), const Color(0xFF082C22)]
+                        : [Colors.black.withValues(alpha: .24), Colors.black.withValues(alpha: .10)],
+                  ),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      ready ? Icons.flash_on_rounded : Icons.touch_app_rounded,
+                      size: 72,
+                      color: ready ? const Color(0xFF28E38A) : Colors.white70,
+                    ),
+                    const SizedBox(height: 15),
+                    Text(
+                      waiting ? 'صبر کن...' : ready ? 'الان بزن!' : 'برای شروع بزن',
+                      style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      last == -1
+                          ? 'زود زدی! دوباره تمرکز کن.'
+                          : last > 0
+                              ? '$last میلی‌ثانیه'
+                              : 'چراغ روشن شد، سریع واکنش نشان بده.',
+                      style: const TextStyle(color: Colors.white60),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            attempts == 0
+                ? 'هر ۳ واکنش موفق، سرعت بازی بیشتر می‌شود.'
+                : 'راند $attempts • هرچه سریع‌تر، امتیاز بیشتر.',
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.white54),
           ),
         ],
       ),
@@ -1106,193 +3241,813 @@ class SharedCountRow extends StatelessWidget {
   }
 }
 
-class GamesPage extends StatefulWidget {
-  const GamesPage({super.key});
+class _MemoryMatchGame extends StatefulWidget {
+  const _MemoryMatchGame({required this.theme, required this.onBack});
+  final AppThemeChoice theme;
+  final VoidCallback onBack;
 
   @override
-  State<GamesPage> createState() => _GamesPageState();
+  State<_MemoryMatchGame> createState() => _MemoryMatchGameState();
 }
 
-class _GamesPageState extends State<GamesPage> {
-  final random = math.Random();
-  int mode = 0;
+class _MemoryMatchGameState extends State<_MemoryMatchGame> {
+  final math.Random random = math.Random();
+  final List<IconData> symbols = const [
+    Icons.favorite_rounded,
+    Icons.star_rounded,
+    Icons.bolt_rounded,
+    Icons.pets_rounded,
+    Icons.music_note_rounded,
+    Icons.local_fire_department_rounded,
+    Icons.cloud_rounded,
+    Icons.flashlight_on_rounded,
+    Icons.sports_soccer_rounded,
+    Icons.cake_rounded,
+    Icons.catching_pokemon_rounded,
+    Icons.rocket_launch_rounded,
+    Icons.auto_awesome_rounded,
+    Icons.icecream_rounded,
+    Icons.headphones_rounded,
+    Icons.coffee_rounded,
+    Icons.local_florist_rounded,
+    Icons.sunny_rounded,
+  ];
+  final Set<String> _recentBoards = <String>{};
+  late List<int> cards;
+  late List<bool> revealed;
+  late List<bool> matched;
+  int? first;
+  int? second;
+  bool locked = false;
+  bool roundComplete = false;
+  int moves = 0;
+  int level = 1;
   int score = 0;
-  int round = 1;
-  int target = 0;
-  int remaining = 45;
-  bool breathing = false;
-  Timer? timer;
 
   @override
   void initState() {
     super.initState();
-    newRound();
+    _newBoard(notify: false);
   }
 
-  @override
-  void dispose() {
-    timer?.cancel();
-    super.dispose();
+  void _newBoard({bool notify = true}) {
+    final pairCount = math.min(symbols.length, 3 + (level - 1));
+    List<int> pool;
+    int attempts = 0;
+    do {
+      final ids = List<int>.generate(pairCount, (i) => i);
+      pool = [...ids, ...ids]..shuffle(random);
+      attempts += 1;
+    } while (_recentBoards.contains(pool.join(',')) && attempts < 20);
+
+    final signature = pool.join(',');
+    _recentBoards.add(signature);
+    if (_recentBoards.length > 8) _recentBoards.remove(_recentBoards.first);
+
+    void apply() {
+      cards = pool;
+      revealed = List<bool>.filled(pool.length, false);
+      matched = List<bool>.filled(pool.length, false);
+      first = null;
+      second = null;
+      locked = false;
+      roundComplete = false;
+      moves = 0;
+    }
+
+    if (notify && mounted) {
+      setState(apply);
+    } else {
+      apply();
+    }
   }
 
-  void newRound() {
+  Future<void> _flip(int index) async {
+    if (locked || roundComplete || matched[index] || revealed[index] || first == index) return;
+    setState(() => revealed[index] = true);
+
+    if (first == null) {
+      first = index;
+      return;
+    }
+
+    second = index;
+    final a = first!;
+    final b = second!;
     setState(() {
-      mode = random.nextInt(3);
-      score = 0;
-      round = 1;
-      target = random.nextInt(8);
-      remaining = 45;
-      breathing = false;
+      moves += 1;
+      locked = true;
     });
-  }
 
-  void tapTarget(int index) {
-    if (index != target) return;
+    await Future<void>.delayed(Duration(milliseconds: math.max(360, 620 - level * 8)));
+    if (!mounted) return;
+
+    if (cards[a] == cards[b]) {
+      setState(() {
+        matched[a] = true;
+        matched[b] = true;
+        score += math.max(12, 82 - moves * 2 + level * 5);
+      });
+    } else {
+      setState(() {
+        revealed[a] = false;
+        revealed[b] = false;
+        score = math.max(0, score - 2);
+      });
+    }
+
+    final done = matched.every((v) => v);
     setState(() {
-      score += 1;
-      round += 1;
-      target = random.nextInt(8);
+      first = null;
+      second = null;
+      locked = false;
+      roundComplete = done;
     });
-  }
 
-  void startBreathing() {
-    if (breathing) return;
-    setState(() { breathing = true; remaining = 45; });
-    timer?.cancel();
-    timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!mounted) return;
-      if (remaining <= 1) {
-        timer?.cancel();
-        setState(() { breathing = false; remaining = 45; });
-      } else {
-        setState(() => remaining -= 1);
-      }
-    });
+    if (done && mounted) {
+      setState(() => level += 1);
+      await Future<void>.delayed(const Duration(milliseconds: 450));
+      if (mounted) _newBoard();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final titles = <String>['شکار ستاره', 'تغییر رنگ', 'آرام‌سازی نفس'];
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(18, 12, 18, 110),
-      children: <Widget>[
-        const PageHeader(title: 'بازی‌های بی‌پایان', subtitle: 'هر بار یک دور تازه؛ سبک، کوتاه و قابل تکرار.'),
-        const SizedBox(height: 14),
-        Glass(
-          child: Row(
-            children: <Widget>[
-              Expanded(child: Text(titles[mode], style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900))),
-              IconButton(onPressed: newRound, icon: const Icon(Icons.shuffle, color: kPurple)),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-        if (mode == 0)
-          Glass(
+    final c = colorsFor(widget.theme);
+    final cross = cards.length <= 12 ? 4 : 5;
+    return _GameScaffold(
+      theme: widget.theme,
+      title: 'حافظه جفت‌ها',
+      onBack: widget.onBack,
+      child: Column(
+        children: [
+          _scoreBar(c, 'امتیاز $score', 'مرحله $level • حرکت $moves'),
+          const SizedBox(height: 12),
+          _Glass(
+            accent: c.secondary,
             child: GridView.builder(
-              itemCount: 8,
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 4, crossAxisSpacing: 8, mainAxisSpacing: 8),
-              itemBuilder: (_, int index) {
+              itemCount: cards.length,
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: cross,
+                crossAxisSpacing: 8,
+                mainAxisSpacing: 8,
+              ),
+              itemBuilder: (_, i) {
+                final show = revealed[i] || matched[i];
                 return InkWell(
-                  onTap: () => tapTarget(index),
+                  onTap: () => _flip(i),
                   borderRadius: BorderRadius.circular(14),
-                  child: Container(
-                    decoration: BoxDecoration(color: const Color(0x22101018), borderRadius: BorderRadius.circular(14), border: Border.all(color: Colors.white10)),
-                    child: Center(child: Icon(index == target ? Icons.star : Icons.circle_outlined, color: index == target ? const Color(0xFFFFC44D) : Colors.grey, size: 34)),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 160),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(14),
+                      color: show ? c.secondary.withValues(alpha: .16) : Colors.black.withValues(alpha: .28),
+                      border: Border.all(color: show ? c.secondary.withValues(alpha: .55) : Colors.white12),
+                    ),
+                    child: Center(
+                      child: show
+                          ? Icon(symbols[cards[i]], size: 32, color: matched[i] ? c.primary : c.secondary)
+                          : const Icon(Icons.question_mark_rounded, color: Colors.white24, size: 28),
+                    ),
                   ),
                 );
               },
             ),
-          )
-        else if (mode == 1)
-          const ColorGame()
-        else
-          Glass(
-            child: Column(
-              children: <Widget>[
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 900),
-                  width: breathing ? 190 : 120,
-                  height: breathing ? 190 : 120,
-                  decoration: BoxDecoration(shape: BoxShape.circle, color: const Color(0x229A66FF), border: Border.all(color: const Color(0x669A66FF), width: 2)),
-                  child: const Center(child: Text('نفس', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900))),
-                ),
-                const SizedBox(height: 14),
-                Text('$remaining ثانیه', style: const TextStyle(color: Colors.white54)),
-                const SizedBox(height: 12),
-                FilledButton.icon(onPressed: startBreathing, icon: const Icon(Icons.air), label: Text(breathing ? 'در حال آرام‌سازی' : 'شروع')),
-              ],
-            ),
           ),
-        const SizedBox(height: 12),
-        Glass(child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: <Widget>[Text('دور $round', style: const TextStyle(color: Colors.white60)), Text('امتیاز $score', style: const TextStyle(color: kBlue, fontWeight: FontWeight.w900))])),
-      ],
-    );
-  }
-}
-
-class ColorGame extends StatefulWidget {
-  const ColorGame({super.key});
-
-  @override
-  State<ColorGame> createState() => _ColorGameState();
-}
-
-class _ColorGameState extends State<ColorGame> {
-  final random = math.Random();
-  final colors = <Color>[kRed, kBlue, kPurple, Color(0xFF2CE08C)];
-  int answer = 0;
-  int score = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    answer = random.nextInt(colors.length);
-  }
-
-  void pick(int index) {
-    setState(() {
-      if (index == answer) score += 1;
-      answer = random.nextInt(colors.length);
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final labels = <String>['قرمز', 'آبی', 'بنفش', 'سبز'];
-    return Glass(
-      child: Column(
-        children: <Widget>[
-          const Text('فقط رنگی را بزن که با نشانگر وسط مطابقت دارد.'),
-          const SizedBox(height: 14),
-          Container(width: 110, height: 110, decoration: BoxDecoration(shape: BoxShape.circle, color: colors[answer])),
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: List<Widget>.generate(labels.length, (int index) => FilledButton.tonal(onPressed: () => pick(index), child: Text(labels[index]))),
+          const SizedBox(height: 10),
+          Text(
+            'مرحله $level • جفت‌های بیشتر یعنی صفحه سخت‌تر. هیچ چیدمان پشت سرهم تکرار نمی‌شود.',
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.white54),
           ),
-          const SizedBox(height: 8),
-          Text('امتیاز این بازی: $score', style: const TextStyle(color: Colors.white54)),
         ],
       ),
     );
   }
 }
 
-class MediaPage extends StatefulWidget {
-  const MediaPage({super.key});
+class _FindPairGame extends StatefulWidget {
+  const _FindPairGame({required this.theme, required this.onBack});
+  final AppThemeChoice theme;
+  final VoidCallback onBack;
 
   @override
-  State<MediaPage> createState() => _MediaPageState();
+  State<_FindPairGame> createState() => _FindPairGameState();
 }
 
-class _MediaPageState extends State<MediaPage> {
-  final picker = ImagePicker();
-  final recorder = AudioRecorder();
-  final player = AudioPlayer();
+class _FindPairGameState extends State<_FindPairGame> {
+  final math.Random random = math.Random();
+  final List<String> symbols = const [
+    '🐱', '🐶', '🦊', '🐼', '🐸', '🐵', '🦁', '🐯', '🐨', '🐰',
+    '🐻', '🐙', '🦄', '🐝', '🦋', '🐢', '🦜', '🐳', '⭐', '🌙',
+    '☀️', '🍀', '🔥', '🎵', '🎲', '🚀', '⚽', '🍉', '🍓', '🌈',
+  ];
+  final Set<String> _recentBoards = <String>{};
+  late List<String> cards;
+  int first = -1;
+  int second = -1;
+  bool locked = false;
+  bool matched = false;
+  int level = 1;
+  int score = 0;
+  int rounds = 0;
+  int errors = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _newRound(notify: false);
+  }
+
+  void _newRound({bool notify = true}) {
+    final distractorCount = math.min(symbols.length - 1, 5 + (level - 1) * 2);
+    String target;
+    List<String> pool;
+    int attempts = 0;
+    do {
+      target = symbols[random.nextInt(symbols.length)];
+      final distractors = <String>{};
+      while (distractors.length < distractorCount) {
+        final candidate = symbols[random.nextInt(symbols.length)];
+        if (candidate != target) distractors.add(candidate);
+      }
+      pool = <String>[target, target, ...distractors]..shuffle(random);
+      attempts += 1;
+    } while (_recentBoards.contains(pool.join('|')) && attempts < 20);
+
+    final signature = pool.join('|');
+    _recentBoards.add(signature);
+    if (_recentBoards.length > 10) _recentBoards.remove(_recentBoards.first);
+
+    void apply() {
+      cards = pool;
+      first = -1;
+      second = -1;
+      matched = false;
+      locked = false;
+    }
+    if (notify && mounted) {
+      setState(apply);
+    } else {
+      apply();
+    }
+  }
+
+  Future<void> _tap(int index) async {
+    if (locked || matched || index == first) return;
+    setState(() {
+      if (first == -1) {
+        first = index;
+      } else {
+        second = index;
+        locked = true;
+      }
+    });
+
+    if (second == -1) return;
+    final a = first;
+    final b = second;
+    await Future<void>.delayed(const Duration(milliseconds: 360));
+    if (!mounted) return;
+
+    if (cards[a] == cards[b]) {
+      setState(() {
+        matched = true;
+        rounds += 1;
+        score += math.max(20, 150 - level * 5 - errors * 2);
+      });
+      await Future<void>.delayed(const Duration(milliseconds: 380));
+      if (!mounted) return;
+      setState(() => level += 1);
+      _newRound();
+    } else {
+      setState(() {
+        errors += 1;
+        score = math.max(0, score - math.min(12, 4 + level));
+        first = -1;
+        second = -1;
+        locked = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = colorsFor(widget.theme);
+    final cross = cards.length >= 20 ? 5 : cards.length >= 12 ? 4 : 3;
+    return _GameScaffold(
+      theme: widget.theme,
+      title: 'پیدا کردن دو کارت مثل هم',
+      onBack: widget.onBack,
+      child: Column(
+        children: [
+          _scoreBar(c, 'امتیاز $score', 'مرحله $level • خطا $errors'),
+          const SizedBox(height: 12),
+          _Glass(
+            accent: c.accent,
+            child: Column(
+              children: [
+                const Text(
+                  'دو کارت کاملاً یکسان‌اند؛ همه بقیه متفاوت‌اند. هر مرحله شلوغ‌تر می‌شود.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white60),
+                ),
+                const SizedBox(height: 12),
+                GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: cards.length,
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: cross,
+                    crossAxisSpacing: 7,
+                    mainAxisSpacing: 7,
+                    childAspectRatio: 0.88,
+                  ),
+                  itemBuilder: (_, i) {
+                    final open = i == first || i == second || matched;
+                    return InkWell(
+                      onTap: () => _tap(i),
+                      borderRadius: BorderRadius.circular(14),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(14),
+                          color: open ? c.accent.withValues(alpha: .18) : Colors.black.withValues(alpha: .28),
+                          border: Border.all(color: open ? c.accent.withValues(alpha: .6) : Colors.white12),
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(open ? cards[i] : '؟', style: TextStyle(fontSize: open ? 27 : 24, color: Colors.white70)),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'مرحله $level • از آسان شروع می‌شود و بدون تکرار مستقیم سخت‌تر می‌شود • راند $rounds',
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.white54),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _QuickMathGame extends StatefulWidget {
+  const _QuickMathGame({required this.theme, required this.onBack});
+  final AppThemeChoice theme;
+  final VoidCallback onBack;
+
+  @override
+  State<_QuickMathGame> createState() => _QuickMathGameState();
+}
+
+class _QuickMathGameState extends State<_QuickMathGame> {
+  final math.Random random = math.Random();
+  final Set<String> _recentQuestions = <String>{};
+  late int a;
+  late int b;
+  late String op;
+  late int answer;
+  late List<int> choices;
+  int level = 1;
+  int streak = 0;
+  int score = 0;
+  int questions = 0;
+  int correctCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _newQuestion(notify: false);
+  }
+
+  void _newQuestion({bool notify = true}) {
+    String signature = '';
+    int localA = 0;
+    int localB = 0;
+    String localOp = '+';
+    int localAnswer = 0;
+    int tries = 0;
+
+    do {
+      final difficulty = 1 + (level - 1) ~/ 2;
+      final maxN = math.min(99, 8 + difficulty * 7);
+      final roll = random.nextInt(100);
+
+      if (difficulty >= 7 && roll < 18) {
+        localOp = '÷';
+        localB = 2 + random.nextInt(math.max(2, math.min(12, difficulty)));
+        final quotient = 2 + random.nextInt(math.max(2, math.min(20, difficulty + 5)));
+        localA = localB * quotient;
+        localAnswer = quotient;
+      } else if (difficulty >= 4 && roll < 45) {
+        localOp = '×';
+        final mulMax = math.min(18, 4 + difficulty);
+        localA = 2 + random.nextInt(mulMax - 1);
+        localB = 2 + random.nextInt(mulMax - 1);
+        localAnswer = localA * localB;
+      } else {
+        localOp = random.nextBool() ? '+' : '-';
+        localA = 1 + random.nextInt(maxN);
+        localB = 1 + random.nextInt(maxN);
+        if (localOp == '-' && localB > localA) {
+          final t = localA;
+          localA = localB;
+          localB = t;
+        }
+        localAnswer = localOp == '+' ? localA + localB : localA - localB;
+      }
+
+      signature = '$localA$localOp$localB=$localAnswer';
+      tries += 1;
+    } while (_recentQuestions.contains(signature) && tries < 30);
+
+    _recentQuestions.add(signature);
+    if (_recentQuestions.length > 20) _recentQuestions.remove(_recentQuestions.first);
+
+    final values = <int>{localAnswer};
+    final spread = math.max(5, 4 + level * 2);
+    while (values.length < 4) {
+      final delta = 1 + random.nextInt(spread);
+      final candidate = random.nextBool() ? localAnswer + delta : localAnswer - delta;
+      if (candidate >= 0) values.add(candidate);
+    }
+
+    final newChoices = values.toList()..shuffle(random);
+    void apply() {
+      a = localA;
+      b = localB;
+      op = localOp;
+      answer = localAnswer;
+      choices = newChoices;
+    }
+    if (notify && mounted) {
+      setState(apply);
+    } else {
+      apply();
+    }
+  }
+
+  void _pick(int value) {
+    final correct = value == answer;
+    setState(() {
+      questions += 1;
+      if (correct) {
+        correctCount += 1;
+        streak += 1;
+        score += 10 + streak * 3 + level * 2;
+        if (correctCount % 4 == 0) level += 1;
+      } else {
+        streak = 0;
+        score = math.max(0, score - math.min(10, 3 + level));
+      }
+    });
+    _newQuestion();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = colorsFor(widget.theme);
+    return _GameScaffold(
+      theme: widget.theme,
+      title: 'چالش ذهن',
+      onBack: widget.onBack,
+      child: Column(
+        children: [
+          _scoreBar(c, 'امتیاز $score', 'مرحله $level • کمبو $streak'),
+          const SizedBox(height: 12),
+          _Glass(
+            accent: c.primary,
+            child: Column(
+              children: [
+                const Text('جواب درست را انتخاب کن؛ سؤال‌ها تکراری پشت‌سرهم نمی‌شوند.', style: TextStyle(color: Colors.white60)),
+                const SizedBox(height: 15),
+                Text('$a $op $b = ؟', style: const TextStyle(fontSize: 34, fontWeight: FontWeight.w900)),
+                const SizedBox(height: 18),
+                GridView.count(
+                  shrinkWrap: true,
+                  crossAxisCount: 2,
+                  crossAxisSpacing: 9,
+                  mainAxisSpacing: 9,
+                  childAspectRatio: 2.2,
+                  physics: const NeverScrollableScrollPhysics(),
+                  children: choices.map((v) {
+                    return FilledButton.tonal(
+                      onPressed: () => _pick(v),
+                      child: Text('$v', style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w800)),
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text('سؤال $questions • هر ۴ پاسخ درست، سطح بالاتر و سؤال‌های متنوع‌تر.', style: const TextStyle(color: Colors.white54)),
+        ],
+      ),
+    );
+  }
+}
+
+class _SequenceGame extends StatefulWidget {
+  const _SequenceGame({required this.theme, required this.onBack});
+  final AppThemeChoice theme;
+  final VoidCallback onBack;
+
+  @override
+  State<_SequenceGame> createState() => _SequenceGameState();
+}
+
+class _SequenceGameState extends State<_SequenceGame> {
+  final math.Random random = math.Random();
+  final Set<String> _recentBoards = <String>{};
+  int level = 1;
+  int target = 1;
+  int count = 12;
+  int mistakes = 0;
+  int score = 0;
+  late List<int> board;
+  Stopwatch stopwatch = Stopwatch();
+  int lastMs = 0;
+  bool roundComplete = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _newRound(notify: false);
+  }
+
+  void _newRound({bool notify = true}) {
+    count = math.min(40, 10 + level * 2);
+    List<int> nextBoard;
+    int tries = 0;
+    do {
+      nextBoard = List<int>.generate(count, (i) => i + 1)..shuffle(random);
+      tries += 1;
+    } while (_recentBoards.contains(nextBoard.join(',')) && tries < 20);
+
+    final signature = nextBoard.join(',');
+    _recentBoards.add(signature);
+    if (_recentBoards.length > 8) _recentBoards.remove(_recentBoards.first);
+
+    void apply() {
+      board = nextBoard;
+      target = 1;
+      mistakes = 0;
+      roundComplete = false;
+      stopwatch = Stopwatch()..start();
+    }
+    if (notify && mounted) {
+      setState(apply);
+    } else {
+      apply();
+    }
+  }
+
+  void _tap(int n) {
+    if (roundComplete) return;
+    if (n != target) {
+      setState(() {
+        mistakes += 1;
+        score = math.max(0, score - math.min(8, 2 + level));
+      });
+      return;
+    }
+
+    setState(() {
+      target += 1;
+      score += 4 + (level * 2);
+    });
+
+    if (target > count) {
+      stopwatch.stop();
+      lastMs = stopwatch.elapsedMilliseconds;
+      setState(() {
+        roundComplete = true;
+        level += 1;
+      });
+      Future<void>.delayed(const Duration(milliseconds: 420), () {
+        if (mounted) _newRound();
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = colorsFor(widget.theme);
+    return _GameScaffold(
+      theme: widget.theme,
+      title: 'ترتیب سریع',
+      onBack: widget.onBack,
+      child: Column(
+        children: [
+          _scoreBar(c, 'امتیاز $score', 'مرحله $level • خطا $mistakes'),
+          const SizedBox(height: 12),
+          _Glass(
+            accent: c.accent,
+            child: Column(
+              children: [
+                Text(
+                  roundComplete ? 'راند تمام شد!' : 'عدد $target را پیدا کن',
+                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: c.accent),
+                ),
+                const SizedBox(height: 12),
+                GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: board.length,
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: level >= 7 ? 5 : level >= 4 ? 4 : 3,
+                    crossAxisSpacing: 8,
+                    mainAxisSpacing: 8,
+                  ),
+                  itemBuilder: (_, i) {
+                    return FilledButton.tonal(
+                      onPressed: roundComplete ? null : () => _tap(board[i]),
+                      child: Text('${board[i]}', style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w900)),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            lastMs > 0 ? 'راند قبلی: $lastMs میلی‌ثانیه • هر راند چیدمان تازه دارد.' : 'با هر راند تعداد اعداد بیشتر می‌شود.',
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.white54),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FocusGame extends StatefulWidget {
+  const _FocusGame({required this.theme, required this.onBack});
+  final AppThemeChoice theme;
+  final VoidCallback onBack;
+
+  @override
+  State<_FocusGame> createState() => _FocusGameState();
+}
+
+class _FocusGameState extends State<_FocusGame> {
+  final math.Random random = math.Random();
+  final List<Color> colors = const [
+    Color(0xFFFF4D67),
+    Color(0xFF33A7FF),
+    Color(0xFF9C6BFF),
+    Color(0xFF27E1CC),
+    Color(0xFFFFB020),
+    Color(0xFFFF6B35),
+  ];
+  final List<String> labels = const ['قرمز', 'آبی', 'بنفش', 'فیروزه‌ای', 'زرد', 'نارنجی'];
+  final Set<String> _recentPrompts = <String>{};
+  late int targetColor;
+  late int wordColor;
+  late int optionCount;
+  int score = 0;
+  int streak = 0;
+  int level = 1;
+  int correctCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _next(notify: false);
+  }
+
+  void _next({bool notify = true}) {
+    optionCount = math.min(colors.length, 3 + (level - 1) ~/ 2);
+    int tries = 0;
+    String signature;
+    int nextTarget;
+    int nextWord;
+
+    do {
+      nextTarget = random.nextInt(optionCount);
+      nextWord = random.nextInt(optionCount);
+      if (level >= 2 && nextTarget == nextWord) {
+        nextWord = (nextWord + 1 + random.nextInt(math.max(1, optionCount - 1))) % optionCount;
+      }
+      signature = '$nextTarget:$nextWord:$optionCount';
+      tries += 1;
+    } while (_recentPrompts.contains(signature) && tries < 20);
+
+    _recentPrompts.add(signature);
+    if (_recentPrompts.length > 12) _recentPrompts.remove(_recentPrompts.first);
+
+    void apply() {
+      targetColor = nextTarget;
+      wordColor = nextWord;
+    }
+    if (notify && mounted) {
+      setState(apply);
+    } else {
+      apply();
+    }
+  }
+
+  void _pick(int index) {
+    final correct = index == targetColor;
+    setState(() {
+      if (correct) {
+        correctCount += 1;
+        streak += 1;
+        score += 8 + streak * 2 + level;
+        if (correctCount % 4 == 0) level += 1;
+      } else {
+        streak = 0;
+        score = math.max(0, score - math.min(9, 3 + level));
+      }
+    });
+    _next();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = colorsFor(widget.theme);
+    return _GameScaffold(
+      theme: widget.theme,
+      title: 'تمرکز رنگی',
+      onBack: widget.onBack,
+      child: Column(
+        children: [
+          _scoreBar(c, 'امتیاز $score', 'مرحله $level • کمبو $streak'),
+          const SizedBox(height: 12),
+          _Glass(
+            accent: c.secondary,
+            child: Column(
+              children: [
+                const Text(
+                  'رنگ واقعی نوشته را انتخاب کن؛ خود کلمه را نادیده بگیر.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white60),
+                ),
+                const SizedBox(height: 24),
+                Text(
+                  labels[wordColor],
+                  style: TextStyle(fontSize: 36, fontWeight: FontWeight.w900, color: colors[targetColor]),
+                ),
+                const SizedBox(height: 20),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  alignment: WrapAlignment.center,
+                  children: List.generate(optionCount, (i) {
+                    return FilledButton.tonal(
+                      onPressed: () => _pick(i),
+                      child: Text(labels[i]),
+                    );
+                  }),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'مرحله $level • از ۳ رنگ شروع می‌شود و تا ۶ رنگ سخت‌تر می‌شود.',
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.white54),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+Widget _scoreBar(ThemeColors c, String left, String right) {
+  return _Glass(
+    accent: c.primary,
+    child: Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(left, style: TextStyle(color: c.primary, fontWeight: FontWeight.w900)),
+        Text(right, style: const TextStyle(color: Colors.white60)),
+      ],
+    ),
+  );
+}
+
+class SharedMediaScreen extends StatefulWidget {
+  const SharedMediaScreen({super.key, required this.theme});
+  final AppThemeChoice theme;
+
+  @override
+  State<SharedMediaScreen> createState() => _SharedMediaScreenState();
+}
+
+class _SharedMediaScreenState extends State<SharedMediaScreen> {
+  final ImagePicker picker = ImagePicker();
+  final AudioRecorder recorder = AudioRecorder();
+  final AudioPlayer player = AudioPlayer();
   List<Map<String, dynamic>> media = <Map<String, dynamic>>[];
   String? playing;
   bool recording = false;
@@ -1300,7 +4055,7 @@ class _MediaPageState extends State<MediaPage> {
   @override
   void initState() {
     super.initState();
-    load();
+    _load();
   }
 
   @override
@@ -1310,33 +4065,33 @@ class _MediaPageState extends State<MediaPage> {
     super.dispose();
   }
 
-  Future<void> load() async {
+  Future<void> _load() async {
     try {
-      final List<Map<String, dynamic>> data = await CloudService.instance.listMedia();
+      final data = await CloudService.instance.listMedia();
       if (mounted) setState(() => media = data);
     } catch (_) {}
   }
 
-  Future<void> addPhoto() async {
-    final XFile? file = await picker.pickImage(source: ImageSource.gallery, imageQuality: 88);
-    if (file != null) await upload(file.path, 'image');
+  Future<void> _addPhoto() async {
+    final file = await picker.pickImage(source: ImageSource.gallery, imageQuality: 88);
+    if (file != null) await _upload(file.path, 'image');
   }
 
-  Future<void> addMusic() async {
-    final FilePickerResult? result = await FilePicker.platform.pickFiles(type: FileType.audio);
-    final String? path = result?.files.single.path;
-    if (path != null) await upload(path, 'audio');
+  Future<void> _addMusic() async {
+    final result = await FilePicker.platform.pickFiles(type: FileType.audio);
+    final path = result?.files.single.path;
+    if (path != null) await _upload(path, 'audio');
   }
 
-  Future<void> toggleRecord() async {
+  Future<void> _toggleRecord() async {
     if (recording) {
-      final String? path = await recorder.stop();
+      final path = await recorder.stop();
       if (mounted) setState(() => recording = false);
-      if (path != null) await upload(path, 'audio');
+      if (path != null) await _upload(path, 'audio');
       return;
     }
     if (!await recorder.hasPermission()) {
-      snack('مجوز میکروفون لازم است.');
+      _snack('مجوز میکروفون لازم است.');
       return;
     }
     final dir = await getTemporaryDirectory();
@@ -1345,156 +4100,1946 @@ class _MediaPageState extends State<MediaPage> {
     if (mounted) setState(() => recording = true);
   }
 
-  Future<void> upload(String path, String kind) async {
+  Future<void> _upload(String path, String kind) async {
     try {
       await CloudService.instance.uploadSharedMedia(path: path, kind: kind);
-      await load();
+      await _load();
     } catch (_) {
-      snack('ذخیره فایل انجام نشد.');
+      _snack('ذخیره فایل انجام نشد.');
     }
   }
 
-  Future<void> showImage(Map<String, dynamic> item) async {
+  Future<void> _showImage(Map<String, dynamic> item) async {
     try {
-      final List<int> bytes = await CloudService.instance.downloadMediaBytes(item['id'].toString());
+      final bytes = await CloudService.instance.downloadMediaBytes(item['id'].toString());
       if (!mounted) return;
       await showDialog<void>(
         context: context,
         builder: (_) => Dialog(
-          child: InteractiveViewer(child: Padding(padding: const EdgeInsets.all(12), child: Image.memory(Uint8List.fromList(bytes)))),
+          child: InteractiveViewer(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Image.memory(Uint8List.fromList(bytes)),
+            ),
+          ),
         ),
       );
     } catch (_) {
-      snack('نمایش عکس ممکن نشد.');
+      _snack('نمایش عکس ممکن نشد.');
     }
   }
 
-  Future<void> play(Map<String, dynamic> item) async {
+  Future<void> _play(Map<String, dynamic> item) async {
     try {
-      final List<int> bytes = await CloudService.instance.downloadMediaBytes(item['id'].toString());
+      final bytes = await CloudService.instance.downloadMediaBytes(item['id'].toString());
       await player.play(BytesSource(Uint8List.fromList(bytes)));
       if (mounted) setState(() => playing = item['id'].toString());
     } catch (_) {
-      snack('پخش ممکن نشد.');
+      _snack('پخش ممکن نشد.');
     }
   }
 
-  void snack(String text) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+  void _snack(String text) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+  }
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(18, 12, 18, 110),
-      children: <Widget>[
-        const PageHeader(title: 'رسانه مشترک', subtitle: 'عکس، صدا و آهنگ روی فضای مشترک ذخیره می‌شوند.'),
-        const SizedBox(height: 14),
-        Row(
-          children: <Widget>[
-            Expanded(child: QuickButton(title: 'عکس', icon: Icons.image, color: kBlue, onTap: addPhoto)),
-            const SizedBox(width: 10),
-            Expanded(child: QuickButton(title: 'صدا', icon: recording ? Icons.stop_circle : Icons.mic, color: kRed, onTap: toggleRecord)),
-            const SizedBox(width: 10),
-            Expanded(child: QuickButton(title: 'آهنگ', icon: Icons.music_note, color: kPurple, onTap: addMusic)),
-          ],
-        ),
-        const SizedBox(height: 14),
-        Glass(
-          child: media.isEmpty
-              ? const Padding(padding: EdgeInsets.all(18), child: Center(child: Text('هنوز رسانه‌ای ثبت نشده است.', style: TextStyle(color: Colors.white54))))
-              : Column(
-                  children: media.map((Map<String, dynamic> item) {
-                    final String kind = item['kind']?.toString() ?? 'file';
-                    final bool isImage = kind == 'image';
-                    return ListTile(
-                      leading: Icon(isImage ? Icons.image : Icons.audiotrack, color: isImage ? kBlue : kPurple),
-                      title: Text(item['originalName']?.toString() ?? 'فایل'),
-                      subtitle: const Text('مشترک • ذخیره شده روی سرور', style: TextStyle(color: Colors.white38)),
-                      trailing: isImage
-                          ? IconButton(onPressed: () => showImage(item), icon: const Icon(Icons.visibility_outlined))
-                          : IconButton(onPressed: () => play(item), icon: Icon(playing == item['id']?.toString() ? Icons.stop_circle : Icons.play_circle_fill)),
-                    );
-                  }).toList(),
+    final c = colorsFor(widget.theme);
+    return Scaffold(
+      backgroundColor: AppPalette.page,
+      appBar: AppBar(title: const Text('رسانه مشترک')),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(18, 12, 18, 32),
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: _quick(
+                  'عکس',
+                  Icons.image_rounded,
+                  c.secondary,
+                  _addPhoto,
                 ),
-        ),
-      ],
-    );
-  }
-}
-
-class SettingsPage extends StatefulWidget {
-  const SettingsPage({super.key, required this.onLogout});
-  final VoidCallback onLogout;
-
-  @override
-  State<SettingsPage> createState() => _SettingsPageState();
-}
-
-class _SettingsPageState extends State<SettingsPage> {
-  bool sound = true;
-  bool haptics = true;
-
-  Future<void> changeServer() async {
-    final controller = TextEditingController(text: CloudService.instance.baseUrl ?? '');
-    final bool? ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('آدرس سرور'),
-        content: TextField(controller: controller, textDirection: TextDirection.ltr, keyboardType: TextInputType.url, decoration: const InputDecoration(hintText: 'https://...')),
-        actions: <Widget>[
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('لغو')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('ذخیره')),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _quick(
+                  recording ? 'توقف صدا' : 'صدا',
+                  recording ? Icons.stop_circle_rounded : Icons.mic_rounded,
+                  c.accent,
+                  _toggleRecord,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _quick(
+                  'آهنگ',
+                  Icons.music_note_rounded,
+                  c.primary,
+                  _addMusic,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          _Glass(
+            accent: c.secondary,
+            child: media.isEmpty
+                ? const Padding(
+                    padding: EdgeInsets.all(18),
+                    child: Center(
+                      child: Text(
+                        'هنوز رسانه‌ای ثبت نشده است.',
+                        style: TextStyle(color: Colors.white54),
+                      ),
+                    ),
+                  )
+                : Column(
+                    children: media.map((item) {
+                      final kind = item['kind']?.toString() ?? 'file';
+                      final isImage = kind == 'image';
+                      return ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: Icon(
+                          isImage ? Icons.image_rounded : Icons.audiotrack_rounded,
+                          color: isImage ? c.secondary : c.primary,
+                        ),
+                        title: Text(item['originalName']?.toString() ?? 'فایل'),
+                        subtitle: const Text(
+                          'مشترک • ذخیره شده روی سرور',
+                          style: TextStyle(color: Colors.white38),
+                        ),
+                        trailing: isImage
+                            ? IconButton(
+                                onPressed: () => _showImage(item),
+                                icon: const Icon(Icons.visibility_outlined),
+                              )
+                            : IconButton(
+                                onPressed: () => _play(item),
+                                icon: Icon(
+                                  playing == item['id']?.toString()
+                                      ? Icons.stop_circle_rounded
+                                      : Icons.play_circle_fill_rounded,
+                                ),
+                              ),
+                      );
+                    }).toList(),
+                  ),
+          ),
         ],
       ),
     );
-    if (ok == true && controller.text.trim().isNotEmpty) {
-      await CloudService.instance.setServerUrl(controller.text.trim());
-      if (mounted) setState(() {});
+  }
+
+  Widget _quick(String title, IconData icon, Color color, VoidCallback onTap) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(22),
+        child: _Glass(
+          accent: color,
+          child: Column(
+            children: [
+              Icon(icon, color: color, size: 28),
+              const SizedBox(height: 7),
+              Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MoodButton extends StatelessWidget {
+  const _MoodButton({
+    required this.emoji,
+    required this.label,
+    required this.color,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final String emoji;
+  final String label;
+  final Color color;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        borderRadius: BorderRadius.circular(18),
+        child: Ink(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: .07),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: color.withValues(alpha: .14)),
+          ),
+          child: Row(
+            children: [
+              Text(emoji, style: const TextStyle(fontSize: 25)),
+              const SizedBox(width: 11),
+              Expanded(
+                child: Text(
+                  label,
+                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+                ),
+              ),
+              Icon(Icons.favorite_rounded, color: color, size: 23),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class SisterSpaceScreen extends StatelessWidget {
+  const SisterSpaceScreen({
+    super.key,
+    required this.storage,
+    required this.theme,
+    required this.cloud,
+    this.onSaved,
+  });
+
+  final StorageService storage;
+  final AppThemeChoice theme;
+  final CloudService cloud;
+  final VoidCallback? onSaved;
+
+  Future<void> _saveHeartLine(
+    BuildContext context,
+    String title,
+    String text,
+  ) async {
+    final now = DateTime.now();
+    final note = NoteItem(
+      id: now.microsecondsSinceEpoch.toString(),
+      title: title,
+      body: text,
+      createdAt: now,
+      updatedAt: now,
+      kind: NoteKind.letter,
+      folder: NoteFolder.letters,
+      tags: const ['خواهر'],
+      favorite: true,
+    );
+    await storage.upsert(note);
+    onSaved?.call();
+    if (context.mounted) {
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('در نامه‌های تو ذخیره شد ❤️')),
+      );
     }
-    controller.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(18, 12, 18, 110),
-      children: <Widget>[
-        const PageHeader(title: 'تنظیمات', subtitle: 'تنظیمات برنامه کلانتر'),
-        const SizedBox(height: 14),
-        Glass(
-          child: Column(
-            children: <Widget>[
-              ListTile(
-                leading: Icon(Icons.cloud_done_outlined, color: CloudService.instance.online ? const Color(0xFF2CE08C) : Colors.grey),
-                title: const Text('وضعیت اتصال'),
-                subtitle: Text(CloudService.instance.online ? 'آنلاین و همگام' : 'آفلاین / در حال تلاش', style: const TextStyle(color: Colors.white54)),
+    final c = colorsFor(theme);
+    final custom = storage
+        .activeNotes()
+        .where(
+          (n) =>
+              n.folder == NoteFolder.letters ||
+              n.tags.any((t) => t.contains('خواهر')),
+        )
+        .toList();
+    final lines = <Map<String, dynamic>>[
+      {
+        'title': 'چرا دوستت دارم',
+        'icon': Icons.favorite_rounded,
+        'color': Colors.pinkAccent,
+        'text':
+            'بودنت برای من یک حس امن است؛ لازم نیست دلیل بزرگی برای دوست داشتنت داشته باشم.',
+      },
+      {
+        'title': 'چیزهایی که بابتشان ممنونم',
+        'icon': Icons.volunteer_activism_rounded,
+        'color': Colors.amber,
+        'text':
+            'ممنون که در زندگی من هستی؛ برای لحظه‌های خوب، حرف‌ها و آغوش‌هایت.',
+      },
+      {
+        'title': 'وقتی دلم برایت تنگ می‌شود',
+        'icon': Icons.nightlight_rounded,
+        'color': c.secondary,
+        'text': 'گاهی فقط یاد تو کافی است تا یک روز معمولی کمی گرم‌تر شود.',
+      },
+      {
+        'title': 'آرزوهایی که برایت دارم',
+        'icon': Icons.auto_awesome_rounded,
+        'color': c.primary,
+        'text':
+            'آرامش، سلامتی، لبخندهای واقعی و روزهایی که به خودت افتخار کنی.',
+      },
+      {
+        'title': 'من به تو افتخار می‌کنم',
+        'icon': Icons.star_rounded,
+        'color': Colors.orangeAccent,
+        'text':
+            'مهم نیست چقدر مسیر سخت بوده؛ دوباره ایستادن تو برای من ارزشمند است.',
+      },
+      {
+        'title': 'اگر امروز سخت بود',
+        'icon': Icons.cloud_done_rounded,
+        'color': Colors.lightBlueAccent,
+        'text':
+            'امروز را لازم نیست کامل کنی. نفس بکش، کمی استراحت کن و فقط قدم بعدی را بردار.',
+      },
+    ];
+
+    return Scaffold(
+      backgroundColor: AppPalette.page,
+      appBar: AppBar(title: Text('برای ${cloud.myDisplayName} ❤️🫂')),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(18, 8, 18, 30),
+        children: [
+          _Reveal(
+            child: _Glass(
+              accent: c.primary,
+              child: Column(
+                children: [
+                  const _BreathingLogo(color: Color(0xFFFF4D67)),
+                  const SizedBox(height: 12),
+                  Text(
+                    'این بخش فقط برای توست، ${cloud.myDisplayName}.',
+                    style: TextStyle(fontSize: 19, fontWeight: FontWeight.w900),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'هر وقت دلت خواست، یکی از این جمله‌ها را باز کن.',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: .55),
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
               ),
-              const Divider(color: Colors.white10),
-              ListTile(
-                leading: const Icon(Icons.dns_outlined, color: Colors.grey),
-                title: const Text('سرور'),
-                subtitle: Text(CloudService.instance.baseUrl ?? 'تنظیم نشده', textDirection: TextDirection.ltr, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white38)),
-                onTap: changeServer,
+            ),
+          ),
+          const SizedBox(height: 16),
+          ...lines.asMap().entries.map((entry) {
+            final i = entry.key;
+            final item = entry.value;
+            final itemColor = item['color'] as Color;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _Reveal(
+                delay: Duration(milliseconds: i * 55),
+                child: _Glass(
+                  accent: itemColor,
+                  onTap: () => showModalBottomSheet(
+                    context: context,
+                    backgroundColor: AppPalette.surface,
+                    showDragHandle: true,
+                    builder: (_) => SafeArea(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 10, 20, 30),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              item['icon'] as IconData,
+                              size: 42,
+                              color: itemColor,
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              item['title'] as String,
+                              style: const TextStyle(
+                                fontSize: 19,
+                                fontWeight: FontWeight.w900,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              item['text'] as String,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                height: 1.7,
+                                color: Colors.white70,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 18),
+                            FilledButton.icon(
+                              onPressed: () => _saveHeartLine(
+                                context,
+                                item['title'] as String,
+                                item['text'] as String,
+                              ),
+                              icon: const Icon(Icons.favorite_rounded),
+                              label: const Text('ذخیره در نامه‌ها'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        backgroundColor: itemColor.withValues(alpha: .12),
+                        child: Icon(item['icon'] as IconData, color: itemColor),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          item['title'] as String,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ),
+                      const Icon(
+                        Icons.chevron_left_rounded,
+                        color: Colors.white38,
+                      ),
+                    ],
+                  ),
+                ),
               ),
-              const Divider(color: Colors.white10),
-              SwitchListTile(value: sound, onChanged: (bool value) => setState(() => sound = value), title: const Text('صدا'), secondary: const Icon(Icons.volume_up_outlined, color: Colors.grey)),
-              SwitchListTile(value: haptics, onChanged: (bool value) => setState(() => haptics = value), title: const Text('لرزش'), secondary: const Icon(Icons.vibration_outlined, color: Colors.grey)),
+            );
+          }),
+          if (custom.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            const Text(
+              'نامه‌ها و یادداشت‌های مخصوص او',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 10),
+            ...custom
+                .take(8)
+                .map(
+                  (n) => Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: _Glass(
+                      accent: c.secondary,
+                      child: Row(
+                        children: [
+                          Icon(Icons.mail_rounded, color: c.secondary),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              n.title.isEmpty ? 'نامه بدون عنوان' : n.title,
+                            ),
+                          ),
+                          const Icon(
+                            Icons.favorite_rounded,
+                            color: Colors.pinkAccent,
+                            size: 18,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class CalendarFullScreen extends StatelessWidget {
+  const CalendarFullScreen({
+    super.key,
+    required this.storage,
+    required this.theme,
+  });
+  final StorageService storage;
+  final AppThemeChoice theme;
+  @override
+  Widget build(BuildContext context) {
+    final c = colorsFor(theme);
+    return Scaffold(
+      backgroundColor: AppPalette.page,
+      appBar: AppBar(
+        title: const Text('تقویم خاطرات'),
+        backgroundColor: AppPalette.page,
+        surfaceTintColor: Colors.transparent,
+        scrolledUnderElevation: 0,
+      ),
+      body: ColoredBox(
+        color: AppPalette.page,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            IgnorePointer(
+              child: CustomPaint(
+                painter: _CalendarAmbientPainter(c.primary, c.secondary),
+              ),
+            ),
+            _MemoryCalendar(
+              notes: storage
+                  .activeNotes()
+                  .where((e) => e.kind == NoteKind.memory)
+                  .toList(),
+              color: c.primary,
+              onOpen: (n) => showModalBottomSheet(
+                context: context,
+                backgroundColor: AppPalette.surface,
+                barrierColor: Colors.black.withValues(alpha: .65),
+                builder: (_) => NoteReader(
+                  note: n,
+                  color: c.primary,
+                  onDelete: () async {
+                    await storage.moveToTrash(n.id);
+                    await NotificationService.instance.cancelNoteReminder(n.id);
+                  },
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CalendarAmbientPainter extends CustomPainter {
+  const _CalendarAmbientPainter(this.primary, this.secondary);
+  final Color primary;
+  final Color secondary;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..style = PaintingStyle.fill;
+    final points = [
+      Offset(size.width * .10, size.height * .18),
+      Offset(size.width * .88, size.height * .36),
+      Offset(size.width * .30, size.height * .82),
+    ];
+    final colors = [primary, secondary, primary];
+    for (var i = 0; i < points.length; i++) {
+      paint.color = colors[i].withValues(alpha: .025);
+      canvas.drawCircle(points[i], 150, paint);
+      paint.color = colors[i].withValues(alpha: .012);
+      canvas.drawCircle(points[i], 260, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _CalendarAmbientPainter oldDelegate) =>
+      oldDelegate.primary != primary || oldDelegate.secondary != secondary;
+}
+
+class TrashScreen extends StatefulWidget {
+  const TrashScreen({
+    super.key,
+    required this.storage,
+    required this.theme,
+    required this.onRefresh,
+  });
+  final StorageService storage;
+  final AppThemeChoice theme;
+  final VoidCallback onRefresh;
+  @override
+  State<TrashScreen> createState() => _TrashScreenState();
+}
+
+class _TrashScreenState extends State<TrashScreen> {
+  late List<NoteItem> list;
+  @override
+  void initState() {
+    super.initState();
+    list = widget.storage.trashNotes();
+  }
+
+  void reload() {
+    setState(() => list = widget.storage.trashNotes());
+    widget.onRefresh();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppPalette.page,
+      appBar: AppBar(title: const Text('سطل زباله')),
+      body: list.isEmpty
+          ? const Center(child: Text('سطل زباله خالی است.'))
+          : ListView.builder(
+              padding: const EdgeInsets.all(18),
+              itemCount: list.length,
+              itemBuilder: (_, i) {
+                final n = list[i];
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: _Glass(
+                    accent: Colors.redAccent,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          n.title.isEmpty ? 'بدون عنوان' : n.title,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 16,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'حذف شده: ${DateFormat('yyyy/MM/dd HH:mm').format(n.deletedAt!)}',
+                          style: const TextStyle(
+                            color: Colors.white54,
+                            fontSize: 11,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: () async {
+                                  await widget.storage.restore(n.id);
+                                  if (n.reminderAt != null) {
+                                    await NotificationService.instance
+                                        .scheduleNoteReminder(
+                                          noteId: n.id,
+                                          title: n.title,
+                                          when: n.reminderAt!,
+                                        );
+                                  }
+                                  reload();
+                                },
+                                icon: const Icon(Icons.restore_rounded),
+                                label: const Text('بازیابی'),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: FilledButton.tonalIcon(
+                                onPressed: () async {
+                                  await widget.storage.deleteForever(n.id);
+                                  reload();
+                                },
+                                icon: const Icon(Icons.delete_forever_rounded),
+                                label: const Text('حذف دائمی'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+    );
+  }
+}
+
+class StatsScreen extends StatelessWidget {
+  const StatsScreen({super.key, required this.storage, required this.theme});
+  final StorageService storage;
+  final AppThemeChoice theme;
+  @override
+  Widget build(BuildContext context) {
+    final notes = storage.activeNotes();
+    final c = colorsFor(theme);
+    final types = <String, int>{
+      'یادداشت': notes.where((e) => e.kind == NoteKind.note).length,
+      'چک‌لیست': notes.where((e) => e.kind == NoteKind.checklist).length,
+      'نامه': notes.where((e) => e.kind == NoteKind.letter).length,
+      'خاطره': notes.where((e) => e.kind == NoteKind.memory).length,
+    };
+    return Scaffold(
+      backgroundColor: AppPalette.page,
+      appBar: AppBar(title: const Text('آمار و فعالیت')),
+      body: ListView(
+        padding: const EdgeInsets.all(18),
+        children: [
+          _Glass(
+            accent: c.primary,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _bigStat('${notes.length}', 'کل', c.primary),
+                _bigStat(
+                  '${notes.where((e) => e.favorite).length}',
+                  'محبوب',
+                  Colors.pinkAccent,
+                ),
+                _bigStat(
+                  '${notes.where((e) => e.audioPath != null).length}',
+                  'صوتی',
+                  c.secondary,
+                ),
+                _bigStat(
+                  '${notes.where((e) => e.tags.isNotEmpty).length}',
+                  'Tag',
+                  Colors.amber,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          _Glass(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'بر اساس نوع',
+                  style: TextStyle(fontWeight: FontWeight.w900, fontSize: 17),
+                ),
+                const SizedBox(height: 12),
+                ...types.entries.map(
+                  (e) => Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Row(
+                      children: [
+                        Expanded(child: Text(e.key)),
+                        Text(
+                          '${e.value}',
+                          style: TextStyle(
+                            color: c.primary,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+Widget _bigStat(String v, String l, Color c) => Column(
+  children: [
+    Text(
+      v,
+      style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: c),
+    ),
+    const SizedBox(height: 3),
+    Text(l, style: const TextStyle(color: Colors.white54, fontSize: 10)),
+  ],
+);
+
+class ExportScreen extends StatefulWidget {
+  const ExportScreen({super.key, required this.storage, required this.theme});
+  final StorageService storage;
+  final AppThemeChoice theme;
+  @override
+  State<ExportScreen> createState() => _ExportScreenState();
+}
+
+class _ExportScreenState extends State<ExportScreen> {
+  bool busy = false;
+  List<NoteItem> get all => widget.storage.activeNotes();
+  Future<void> exportTxt() async {
+    final dir = await getTemporaryDirectory();
+    final f = File('${dir.path}/big_sister_notes.txt');
+    final b = all
+        .map(
+          (n) =>
+              '===== ${n.title.isEmpty ? 'بدون عنوان' : n.title} =====\n${n.body}\nتاریخ: ${n.updatedAt}\nTag: ${n.tags.join(', ')}\n',
+        )
+        .join('\n');
+    await f.writeAsString(b);
+    await SharePlus.instance.share(
+      ShareParams(files: [XFile(f.path)], subject: 'Big Sister & Little Brother'),
+    );
+  }
+
+  Future<void> exportPdf() async {
+    setState(() => busy = true);
+    try {
+      final doc = pw.Document();
+      for (final n in all) {
+        doc.addPage(
+          pw.Page(
+            build: (_) => pw.Padding(
+              padding: const pw.EdgeInsets.all(30),
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Text(
+                    n.title.isEmpty ? 'Big Sister Note' : n.title,
+                    style: pw.TextStyle(
+                      fontSize: 24,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                  pw.SizedBox(height: 15),
+                  pw.Text(n.body),
+                  pw.SizedBox(height: 20),
+                  pw.Text(
+                    'Created: ${n.createdAt.toIso8601String()}',
+                    style: const pw.TextStyle(fontSize: 9),
+                  ),
+                  pw.Text(
+                    'Tags: ${n.tags.join(', ')}',
+                    style: const pw.TextStyle(fontSize: 9),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      }
+      await Printing.sharePdf(
+        bytes: await doc.save(),
+        filename: 'big_sister_notes.pdf',
+      );
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = colorsFor(widget.theme);
+    return Scaffold(
+      backgroundColor: AppPalette.page,
+      appBar: AppBar(title: const Text('خروجی و اشتراک‌گذاری')),
+      body: ListView(
+        padding: const EdgeInsets.all(18),
+        children: [
+          _Glass(
+            accent: c.primary,
+            child: Column(
+              children: [
+                ListTile(
+                  leading: Icon(Icons.text_snippet_rounded, color: c.primary),
+                  title: const Text('خروجی TXT'),
+                  subtitle: const Text(
+                    'متن تمام یادداشت‌ها را به اشتراک بگذار',
+                  ),
+                  onTap: busy ? null : exportTxt,
+                ),
+                const Divider(),
+                ListTile(
+                  leading: Icon(
+                    Icons.picture_as_pdf_rounded,
+                    color: c.secondary,
+                  ),
+                  title: const Text('خروجی PDF'),
+                  subtitle: const Text('یادداشت‌ها را به‌صورت PDF آماده کن'),
+                  onTap: busy ? null : exportPdf,
+                ),
+              ],
+            ),
+          ),
+          if (busy)
+            const Padding(
+              padding: EdgeInsets.all(18),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class NoteEditorScreen extends StatefulWidget {
+  const NoteEditorScreen({
+    super.key,
+    required this.storage,
+    required this.theme,
+    this.initial,
+    this.initialKind,
+    this.onDelete,
+  });
+  final StorageService storage;
+  final AppThemeChoice theme;
+  final NoteItem? initial;
+  final NoteKind? initialKind;
+  final Future<void> Function()? onDelete;
+  @override
+  State<NoteEditorScreen> createState() => _NoteEditorScreenState();
+}
+
+class _NoteEditorScreenState extends State<NoteEditorScreen> {
+  late final TextEditingController title;
+  late final TextEditingController body;
+  late NoteKind kind;
+  late NoteFolder folder;
+  late List<String> tags;
+  late List<String> images;
+  String? audioPath;
+  DateTime? reminder;
+  bool favorite = false,
+      pinned = false,
+      bold = false,
+      italic = false,
+      underline = false;
+  double textSize = 17;
+  List<CheckItem> checks = [];
+  final ImagePicker picker = ImagePicker();
+  final AudioRecorder recorder = AudioRecorder();
+  final AudioPlayer player = AudioPlayer();
+  bool recording = false;
+  bool playing = false;
+  Duration audioDuration = Duration.zero;
+  Duration audioPosition = Duration.zero;
+  @override
+  void initState() {
+    super.initState();
+    final n = widget.initial;
+    title = TextEditingController(text: n?.title ?? '');
+    body = TextEditingController(text: n?.body ?? '');
+    kind = n?.kind ?? widget.initialKind ?? NoteKind.note;
+    folder =
+        n?.folder ??
+        (kind == NoteKind.memory
+            ? NoteFolder.memories
+            : kind == NoteKind.letter
+            ? NoteFolder.letters
+            : NoteFolder.personal);
+    tags = List<String>.from(n?.tags ?? []);
+    images = List<String>.from(n?.imagePaths ?? []);
+    audioPath = n?.audioPath;
+    reminder = n?.reminderAt;
+    favorite = n?.favorite ?? false;
+    pinned = n?.pinned ?? false;
+    checks =
+        n?.checkItems
+            .map((e) => CheckItem(text: e.text, done: e.done))
+            .toList() ??
+        [];
+    textSize = n?.textSize ?? 17;
+    bold = n?.bold ?? false;
+    italic = n?.italic ?? false;
+    underline = n?.underline ?? false;
+    player.onDurationChanged.listen((d) {
+      if (mounted) setState(() => audioDuration = d);
+    });
+    player.onPositionChanged.listen((d) {
+      if (mounted) setState(() => audioPosition = d);
+    });
+    player.onPlayerComplete.listen((_) {
+      if (mounted) setState(() => playing = false);
+    });
+  }
+
+  @override
+  void dispose() {
+    title.dispose();
+    body.dispose();
+    recorder.dispose();
+    player.dispose();
+    super.dispose();
+  }
+
+  Future<void> pickImages() async {
+    final xs = await picker.pickMultiImage(imageQuality: 90);
+    for (final x in xs) {
+      images.add(await widget.storage.copyToMedia(File(x.path), 'images'));
+    }
+    setState(() {});
+  }
+
+  Future<void> removeImage(int i) async {
+    final p = images.removeAt(i);
+    final f = File(p);
+    if (await f.exists()) await f.delete();
+    setState(() {});
+  }
+
+  Future<void> recordAudio() async {
+    if (recording) {
+      final path = await recorder.stop();
+      setState(() => recording = false);
+      if (path != null) {
+        audioPath = await widget.storage.copyToMedia(File(path), 'audio');
+        try {
+          final temp = File(path);
+          if (await temp.exists()) await temp.delete();
+        } catch (_) {}
+      }
+      return;
+    }
+    if (!await recorder.hasPermission()) {
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('مجوز میکروفون لازم است.')),
+        );
+      return;
+    }
+    final dir = Directory('${widget.storage.mediaDir.path}/temp');
+    if (!await dir.exists()) await dir.create(recursive: true);
+    final path = '${dir.path}/${DateTime.now().microsecondsSinceEpoch}.m4a';
+    await recorder.start(const RecordConfig(), path: path);
+    setState(() => recording = true);
+  }
+
+  Future<void> playAudio() async {
+    if (audioPath == null) return;
+    if (playing) {
+      await player.pause();
+      setState(() => playing = false);
+      return;
+    }
+    await player.play(DeviceFileSource(audioPath!));
+    setState(() => playing = true);
+  }
+
+  Future<void> removeAudio() async {
+    if (audioPath != null) {
+      final f = File(audioPath!);
+      if (await f.exists()) await f.delete();
+    }
+    audioPath = null;
+    await player.stop();
+    setState(() => playing = false);
+  }
+
+  Future<void> schedule() async {
+    final now = DateTime.now();
+    final base = reminder ?? now.add(const Duration(minutes: 10));
+    final pickedDate = await showDatePicker(
+      context: context,
+      firstDate: DateTime(now.year, now.month, now.day),
+      lastDate: DateTime(now.year + 5),
+      initialDate: DateTime(base.year, base.month, base.day),
+      helpText: 'تاریخ یادآوری این یادداشت',
+    );
+    if (pickedDate == null || !mounted) return;
+    final pickedTime = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(base),
+      helpText: 'زمان یادآوری',
+    );
+    if (pickedTime == null || !mounted) return;
+    final value = DateTime(
+      pickedDate.year,
+      pickedDate.month,
+      pickedDate.day,
+      pickedTime.hour,
+      pickedTime.minute,
+    );
+    if (!value.isAfter(now)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('لطفاً زمان آینده‌ای برای یادآوری انتخاب کن.'),
+        ),
+      );
+      return;
+    }
+    setState(() => reminder = value);
+  }
+
+  Future<void> addTag() async {
+    final ctl = TextEditingController();
+    final value = await showDialog<String>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('افزودن Tag'),
+        content: TextField(
+          controller: ctl,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: 'مثلاً: خاطره'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('لغو'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, ctl.text.trim()),
+            child: const Text('افزودن'),
+          ),
+        ],
+      ),
+    );
+    ctl.dispose();
+    if (value != null && value.isNotEmpty && !tags.contains(value)) {
+      setState(() => tags.add(value));
+    }
+  }
+
+  void applyMarkup(String open, String close) {
+    final s = body.selection.start, e = body.selection.end;
+    if (s < 0 || e < 0 || s == e) {
+      body.text = '${body.text}$open$close';
+      body.selection = TextSelection.collapsed(
+        offset: body.text.length - open.length - close.length,
+      );
+      return;
+    }
+    final selected = body.text.substring(s, e);
+    final next =
+        '${body.text.substring(0, s)}$open$selected$close${body.text.substring(e)}';
+    body.value = TextEditingValue(
+      text: next,
+      selection: TextSelection.collapsed(
+        offset: e + open.length + close.length,
+      ),
+    );
+  }
+
+  NoteItem buildNote() {
+    final now = DateTime.now();
+    return NoteItem(
+      id: widget.initial?.id ?? now.microsecondsSinceEpoch.toString(),
+      title: title.text.trim(),
+      body: body.text.trim(),
+      createdAt: widget.initial?.createdAt ?? now,
+      updatedAt: now,
+      kind: kind,
+      folder: folder,
+      tags: tags,
+      favorite: favorite,
+      pinned: pinned,
+      completed: checks.isNotEmpty && checks.every((e) => e.done),
+      checkItems: checks,
+      imagePaths: images,
+      audioPath: audioPath,
+      reminderAt: reminder,
+      textSize: textSize,
+      bold: bold,
+      italic: italic,
+      underline: underline,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = colorsFor(widget.theme);
+    return Scaffold(
+      backgroundColor: AppPalette.page,
+      appBar: AppBar(
+        title: Text(widget.initial == null ? 'یادداشت جدید' : 'ویرایش یادداشت'),
+        actions: [
+          IconButton(
+            onPressed: () => setState(() => favorite = !favorite),
+            icon: Icon(
+              favorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+              color: favorite ? Colors.pinkAccent : null,
+            ),
+          ),
+          IconButton(
+            onPressed: () => setState(() => pinned = !pinned),
+            icon: Icon(
+              pinned ? Icons.push_pin_rounded : Icons.push_pin_outlined,
+              color: pinned ? Colors.amber : null,
+            ),
+          ),
+          if (widget.initial != null && widget.onDelete != null)
+            IconButton(
+              onPressed: () async {
+                final ok = await showDialog<bool>(
+                  context: context,
+                  builder: (d) => AlertDialog(
+                    title: const Text('حذف یادداشت'),
+                    content: const Text('این یادداشت به سطل زباله منتقل شود؟'),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(d, false),
+                        child: const Text('لغو'),
+                      ),
+                      FilledButton.tonal(
+                        onPressed: () => Navigator.pop(d, true),
+                        child: const Text('حذف'),
+                      ),
+                    ],
+                  ),
+                );
+                if (ok == true) {
+                  await widget.onDelete!();
+                  if (mounted) Navigator.pop(context);
+                }
+              },
+              icon: const Icon(
+                Icons.delete_outline_rounded,
+                color: Colors.redAccent,
+              ),
+            ),
+        ],
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
+        children: [
+          _Reveal(
+            child: _Glass(
+              accent: c.primary,
+              child: Column(
+                children: [
+                  TextField(
+                    controller: title,
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                    ),
+                    decoration: const InputDecoration(
+                      hintText: 'عنوان یادداشت',
+                      border: InputBorder.none,
+                      filled: false,
+                    ),
+                  ),
+                  const Divider(),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _drop<NoteKind>(kind, {
+                          for (final x in NoteKind.values) x: _kindLabel(x),
+                        }, (x) => setState(() => kind = x)),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _drop<NoteFolder>(folder, {
+                          for (final x in NoteFolder.values) x: x.label,
+                        }, (x) => setState(() => folder = x)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        _tool(
+                          Icons.format_bold_rounded,
+                          bold,
+                          () => setState(() => bold = !bold),
+                          c.primary,
+                        ),
+                        _tool(
+                          Icons.format_italic_rounded,
+                          italic,
+                          () => setState(() => italic = !italic),
+                          c.primary,
+                        ),
+                        _tool(
+                          Icons.format_underlined_rounded,
+                          underline,
+                          () => setState(() => underline = !underline),
+                          c.primary,
+                        ),
+                        _tool(
+                          Icons.code_rounded,
+                          false,
+                          () => applyMarkup('**', '**'),
+                          c.primary,
+                        ),
+                        _tool(
+                          Icons.format_italic_rounded,
+                          false,
+                          () => applyMarkup('_', '_'),
+                          c.primary,
+                        ),
+                        _tool(
+                          Icons.format_underlined_rounded,
+                          false,
+                          () => applyMarkup('__', '__'),
+                          c.primary,
+                        ),
+                        IconButton(
+                          onPressed: () => setState(
+                            () =>
+                                textSize = (textSize >= 23 ? 15 : textSize + 2),
+                          ),
+                          icon: const Icon(Icons.text_increase_rounded),
+                        ),
+                        IconButton(
+                          onPressed: () => setState(
+                            () =>
+                                textSize = (textSize <= 15 ? 23 : textSize - 2),
+                          ),
+                          icon: const Icon(Icons.text_decrease_rounded),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: body,
+                    maxLines: 10,
+                    style: TextStyle(
+                      fontSize: textSize,
+                      fontWeight: bold ? FontWeight.w800 : null,
+                      fontStyle: italic ? FontStyle.italic : FontStyle.normal,
+                      decoration: underline ? TextDecoration.underline : null,
+                      height: 1.55,
+                    ),
+                    decoration: const InputDecoration(
+                      hintText: 'حرفت را اینجا بنویس...',
+                      fillColor: Colors.transparent,
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      filled: false,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: [
+                      ...tags.map(
+                        (t) => InputChip(
+                          label: Text('#$t'),
+                          onDeleted: () => setState(() => tags.remove(t)),
+                        ),
+                      ),
+                      ActionChip(
+                        avatar: const Icon(Icons.add_rounded, size: 16),
+                        label: const Text('Tag'),
+                        onPressed: addTag,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          _EditorSection(
+            title: 'نوع و گزینه‌ها',
+            color: c.primary,
+            children: [
+              if (kind == NoteKind.checklist) _checkEditor(c.primary),
+              if (kind == NoteKind.memory) _memoryEditor(c.primary),
+              _Glass(
+                accent: c.secondary,
+                child: Column(
+                  children: [
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      value: reminder != null,
+                      onChanged: (v) async {
+                        if (v)
+                          await schedule();
+                        else {
+                          setState(() => reminder = null);
+                        }
+                      },
+                      secondary: Icon(
+                        Icons.notifications_active_rounded,
+                        color: c.secondary,
+                      ),
+                      title: const Text('یادآوری این یادداشت'),
+                      subtitle: Text(
+                        reminder == null
+                            ? 'برای این یادداشت زمان یادآوری انتخاب کن'
+                            : DateFormat('yyyy/MM/dd HH:mm').format(reminder!),
+                      ),
+                    ),
+                    if (audioPath != null || recording) _audioEditor(c.primary),
+                    if (kind != NoteKind.memory) _attachmentRow(c.primary),
+                  ],
+                ),
+              ),
             ],
           ),
+          const SizedBox(height: 20),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(context, buildNote()),
+            icon: const Icon(Icons.check_circle_rounded),
+            label: const Padding(
+              padding: EdgeInsets.symmetric(vertical: 14),
+              child: Text(
+                'ذخیره یادداشت',
+                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          if (widget.initial != null)
+            OutlinedButton.icon(
+              onPressed: () => Navigator.pop(context),
+              icon: const Icon(Icons.undo_rounded),
+              label: const Text('لغو تغییرات'),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _drop<T>(T value, Map<T, String> items, ValueChanged<T> onChanged) =>
+      DropdownButtonFormField<T>(
+        initialValue: value,
+        isExpanded: true,
+        decoration: const InputDecoration(
+          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 2),
         ),
-        const SizedBox(height: 14),
-        Glass(
-          child: const Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              Text('ناشناسی', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
-              SizedBox(height: 8),
-              Text('در چت و نمایش‌های مشترک فقط «پیام ناشناس» و شمارش جمعی دیده می‌شود. کلید داخلی برای احراز ورود روی سرور باقی می‌ماند و به دیگران نشان داده نمی‌شود.', style: TextStyle(color: Colors.white54, height: 1.6)),
-            ],
+        items: items.entries
+            .map(
+              (e) => DropdownMenuItem(
+                value: e.key,
+                child: Text(e.value, overflow: TextOverflow.ellipsis),
+              ),
+            )
+            .toList(),
+        onChanged: (v) {
+          if (v != null) onChanged(v);
+        },
+      );
+  Widget _tool(IconData icon, bool active, VoidCallback onTap, Color c) =>
+      Padding(
+        padding: const EdgeInsets.only(right: 3),
+        child: IconButton(
+          onPressed: onTap,
+          style: IconButton.styleFrom(
+            backgroundColor: active
+                ? c.withValues(alpha: .16)
+                : Colors.white.withValues(alpha: .04),
+          ),
+          icon: Icon(icon, color: active ? c : null),
+        ),
+      );
+  Widget _checkEditor(Color c) {
+    return Column(
+      children: [
+        ...List.generate(
+          checks.length,
+          (i) => Padding(
+            padding: const EdgeInsets.only(bottom: 7),
+            child: Row(
+              children: [
+                Checkbox(
+                  value: checks[i].done,
+                  onChanged: (v) => setState(() => checks[i].done = v ?? false),
+                ),
+                Expanded(
+                  child: TextFormField(
+                    initialValue: checks[i].text,
+                    onChanged: (v) => checks[i].text = v,
+                    decoration: InputDecoration(hintText: 'مورد ${i + 1}'),
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => setState(() => checks.removeAt(i)),
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ],
+            ),
           ),
         ),
-        const SizedBox(height: 14),
-        FilledButton.tonalIcon(onPressed: widget.onLogout, icon: const Icon(Icons.logout), label: const Text('خروج از این دستگاه')),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: () => setState(() => checks.add(CheckItem(text: ''))),
+            icon: const Icon(Icons.add_rounded),
+            label: const Text('افزودن مورد'),
+          ),
+        ),
       ],
     );
+  }
+
+  Widget _memoryEditor(Color c) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                'عکس‌های خاطره',
+                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+              ),
+            ),
+            FilledButton.tonalIcon(
+              onPressed: pickImages,
+              icon: const Icon(Icons.add_photo_alternate_rounded),
+              label: const Text('افزودن'),
+            ),
+          ],
+        ),
+        if (images.isNotEmpty)
+          SizedBox(
+            height: 100,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: images.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (_, i) => Stack(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: Image.file(
+                      File(images[i]),
+                      width: 100,
+                      height: 100,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                  Positioned(
+                    top: 3,
+                    right: 3,
+                    child: Material(
+                      color: Colors.black54,
+                      shape: const CircleBorder(),
+                      child: IconButton(
+                        onPressed: () => removeImage(i),
+                        padding: const EdgeInsets.all(2),
+                        constraints: const BoxConstraints(),
+                        icon: const Icon(Icons.close_rounded, size: 18),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        if (images.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            child: Text(
+              'بدون عکس هم می‌توانی خاطره بسازی.',
+              style: TextStyle(color: Colors.white.withValues(alpha: .48)),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _attachmentRow(Color c) => Row(
+    children: [
+      Expanded(
+        child: FilledButton.tonalIcon(
+          onPressed: recordAudio,
+          icon: Icon(recording ? Icons.stop_circle_rounded : Icons.mic_rounded),
+          label: Text(recording ? 'توقف ضبط' : 'ضبط صدا'),
+        ),
+      ),
+      const SizedBox(width: 8),
+      if (audioPath != null)
+        IconButton(
+          onPressed: removeAudio,
+          icon: const Icon(
+            Icons.delete_outline_rounded,
+            color: Colors.redAccent,
+          ),
+          tooltip: 'حذف صدا',
+        ),
+    ],
+  );
+  Widget _audioEditor(Color c) => Padding(
+    padding: const EdgeInsets.only(top: 8),
+    child: Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: c.withValues(alpha: .06),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Icon(Icons.graphic_eq_rounded, color: c),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'یادداشت صوتی',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+              IconButton(
+                onPressed: playAudio,
+                icon: Icon(
+                  playing
+                      ? Icons.pause_circle_filled_rounded
+                      : Icons.play_circle_fill_rounded,
+                  color: c,
+                  size: 32,
+                ),
+              ),
+              IconButton(
+                onPressed: removeAudio,
+                icon: const Icon(
+                  Icons.delete_outline_rounded,
+                  color: Colors.redAccent,
+                ),
+              ),
+            ],
+          ),
+          Slider(
+            value: audioDuration.inMilliseconds == 0
+                ? 0
+                : (audioPosition.inMilliseconds.toDouble().clamp(
+                    0,
+                    audioDuration.inMilliseconds.toDouble(),
+                  )).toDouble(),
+            max: audioDuration.inMilliseconds == 0
+                ? 1
+                : audioDuration.inMilliseconds.toDouble(),
+            onChanged: (v) async {
+              await player.seek(Duration(milliseconds: v.round()));
+            },
+          ),
+        ],
+      ),
+    ),
+  );
+  String _kindLabel(NoteKind x) => switch (x) {
+    NoteKind.note => 'یادداشت',
+    NoteKind.checklist => 'چک‌لیست',
+    NoteKind.letter => 'نامه',
+    NoteKind.memory => 'خاطره',
+  };
+}
+
+class _EditorSection extends StatelessWidget {
+  const _EditorSection({
+    required this.title,
+    required this.color,
+    required this.children,
+  });
+  final String title;
+  final Color color;
+  final List<Widget> children;
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        title,
+        style: TextStyle(
+          color: color,
+          fontWeight: FontWeight.w900,
+          fontSize: 16,
+        ),
+      ),
+      const SizedBox(height: 8),
+      ...children,
+    ],
+  );
+}
+
+class NoteReader extends StatelessWidget {
+  const NoteReader({
+    super.key,
+    required this.note,
+    required this.color,
+    this.onDelete,
+  });
+  final NoteItem note;
+  final Color color;
+  final VoidCallback? onDelete;
+
+  Future<void> _share() async {
+    final buffer = StringBuffer();
+    buffer.writeln(note.title.isEmpty ? 'آبجی بزرگ و داداش کوچیکه ❤️' : note.title);
+    buffer.writeln();
+    buffer.writeln(note.body);
+    if (note.tags.isNotEmpty)
+      buffer.writeln('\n${note.tags.map((e) => '#$e').join(' ')}');
+    await SharePlus.instance.share(
+      ShareParams(text: buffer.toString(), subject: note.title),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    note.title.isEmpty ? 'بدون عنوان' : note.title,
+                    style: const TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: _share,
+                  icon: const Icon(Icons.share_rounded),
+                ),
+                if (onDelete != null)
+                  IconButton(
+                    onPressed: () async {
+                      final ok = await showDialog<bool>(
+                        context: context,
+                        builder: (d) => AlertDialog(
+                          title: const Text('حذف یادداشت'),
+                          content: const Text(
+                            'این مورد به سطل زباله منتقل شود؟',
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(d, false),
+                              child: const Text('لغو'),
+                            ),
+                            FilledButton.tonal(
+                              onPressed: () => Navigator.pop(d, true),
+                              child: const Text('حذف'),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (ok == true && context.mounted) {
+                        onDelete!();
+                        Navigator.pop(context);
+                      }
+                    },
+                    icon: const Icon(
+                      Icons.delete_outline_rounded,
+                      color: Colors.redAccent,
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Expanded(
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      note.body,
+                      style: TextStyle(
+                        fontSize: note.textSize,
+                        height: 1.6,
+                        fontWeight: note.bold ? FontWeight.w800 : null,
+                        fontStyle: note.italic
+                            ? FontStyle.italic
+                            : FontStyle.normal,
+                        decoration: note.underline
+                            ? TextDecoration.underline
+                            : null,
+                      ),
+                    ),
+                    if (note.checkItems.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      ...note.checkItems.map(
+                        (e) => ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: Icon(
+                            e.done
+                                ? Icons.check_circle_rounded
+                                : Icons.radio_button_unchecked_rounded,
+                            color: e.done ? color : Colors.white38,
+                          ),
+                          title: Text(
+                            e.text,
+                            style: TextStyle(
+                              decoration: e.done
+                                  ? TextDecoration.lineThrough
+                                  : null,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                    if (note.tags.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 6,
+                        children: note.tags
+                            .map((t) => Chip(label: Text('#$t')))
+                            .toList(),
+                      ),
+                    ],
+                    if (note.imagePaths.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      ...note.imagePaths.map(
+                        (p) => Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(18),
+                            child: Image.file(File(p), fit: BoxFit.cover),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class LockScreen extends StatefulWidget {
+  const LockScreen({super.key, required this.storage, required this.onUnlock});
+
+  final StorageService storage;
+  final VoidCallback onUnlock;
+
+  @override
+  State<LockScreen> createState() => _LockScreenState();
+}
+
+class _LockScreenState extends State<LockScreen> {
+  final ctl = TextEditingController();
+  String error = '';
+  bool bioBusy = false;
+
+  bool get hasPin => widget.storage.loadPin() != null;
+  bool get hasBio => widget.storage.loadBiometric();
+
+  @override
+  void dispose() {
+    ctl.dispose();
+    super.dispose();
+  }
+
+  Future<void> unlockPin() async {
+    final pin = widget.storage.loadPin();
+    if (pin != null && ctl.text == pin) {
+      widget.onUnlock();
+    } else if (mounted) {
+      setState(() => error = 'PIN اشتباه است.');
+    }
+  }
+
+  Future<void> unlockBio() async {
+    setState(() => bioBusy = true);
+    try {
+      final ok = await LocalAuthentication().authenticate(
+        localizedReason: 'برای ورود به دفتر آبجی بزرگ و داداش کوچیکه احراز هویت کن',
+        biometricOnly: true,
+      );
+      if (ok) widget.onUnlock();
+    } catch (_) {
+      if (mounted) setState(() => error = 'احراز هویت انجام نشد.');
+    } finally {
+      if (mounted) setState(() => bioBusy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = colorsFor(AppThemeChoice.turquoise);
+    return Scaffold(
+      backgroundColor: AppPalette.page,
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(28),
+          child: _Glass(
+            accent: c.primary,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const _BreathingLogo(color: Color(0xFF19E0CE)),
+                const SizedBox(height: 18),
+                const Text(
+                  'آبجی بزرگ و داداش کوچیکه',
+                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 7),
+                const Text(
+                  'دفتر خصوصی آبجی بزرگ و داداش کوچیکه',
+                  style: TextStyle(color: Colors.white54),
+                ),
+                if (hasPin) ...[
+                  const SizedBox(height: 18),
+                  TextField(
+                    controller: ctl,
+                    keyboardType: TextInputType.number,
+                    obscureText: true,
+                    maxLength: 6,
+                    textAlign: TextAlign.center,
+                    decoration: const InputDecoration(
+                      hintText: 'PIN',
+                      counterText: '',
+                    ),
+                    onSubmitted: (_) => unlockPin(),
+                  ),
+                  if (error.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        error,
+                        style: const TextStyle(color: Colors.redAccent),
+                      ),
+                    ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: unlockPin,
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 14),
+                        child: Text('ورود'),
+                      ),
+                    ),
+                  ),
+                ],
+                if (hasBio) ...[
+                  const SizedBox(height: 8),
+                  TextButton.icon(
+                    onPressed: bioBusy ? null : unlockBio,
+                    icon: const Icon(Icons.fingerprint_rounded),
+                    label: Text(
+                      bioBusy ? 'در حال بررسی...' : 'ورود با بیومتریک',
+                    ),
+                  ),
+                ],
+                if (!hasPin && !hasBio) ...[
+                  const SizedBox(height: 16),
+                  const Text(
+                    'قفل فعال است اما روش ورود تنظیم نشده است.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.white54),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _Glass extends StatelessWidget {
+  const _Glass({this.child, this.accent, this.onTap});
+  final Widget? child;
+  final Color? accent;
+  final VoidCallback? onTap;
+  @override
+  Widget build(BuildContext context) {
+    final a = accent ?? colorsFor(AppThemeChoice.turquoise).primary;
+    final content = Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppPalette.surface,
+        borderRadius: BorderRadius.circular(25),
+        border: Border.all(color: Colors.white.withValues(alpha: .055)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: .24),
+            blurRadius: 24,
+            offset: const Offset(0, 10),
+          ),
+          BoxShadow(
+            color: a.withValues(alpha: .035),
+            blurRadius: 26,
+            spreadRadius: 1,
+          ),
+        ],
+      ),
+      child: child,
+    );
+    return onTap == null
+        ? content
+        : Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: onTap,
+              borderRadius: BorderRadius.circular(25),
+              child: content,
+            ),
+          );
   }
 }

@@ -1,14 +1,7 @@
 import 'dart:convert';
 
 enum NoteKind { note, checklist, letter, memory }
-enum AppThemeChoice { turquoise, sky, red, blue, purple, skyRose, emerald }
-
-AppThemeChoice themeForCloudRole(String? role) => switch (role) {
-      'person1' => AppThemeChoice.purple,
-      'person2' => AppThemeChoice.blue,
-      'person3' => AppThemeChoice.red,
-      _ => AppThemeChoice.turquoise,
-    };
+enum AppThemeChoice { turquoise, sky, red, blue }
 
 enum NoteFolder { personal, ideas, tasks, memories, letters, dreams, private }
 

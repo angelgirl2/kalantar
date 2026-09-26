@@ -48,6 +48,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "BrainMemory"
+rootProject.name = "Kalantar"
 
 include(":app")

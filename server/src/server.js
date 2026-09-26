@@ -18,11 +18,12 @@ const ROOM_CODE_TTL_HOURS = Number(process.env.ROOM_CODE_TTL_HOURS || 24);
 const JWT_SECRET = String(process.env.JWT_SECRET || '').trim();
 const MEDIA_DIR = process.env.MEDIA_DIR || '/data/media';
 const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB || 25);
-const SHARED_ROOM_KEY = process.env.SHARED_ROOM_KEY || 'kalantar-anonymous-room';
-const PERSON1_PASSWORD = process.env.PERSON1_PASSWORD || '';
-const PERSON2_PASSWORD = process.env.PERSON2_PASSWORD || '';
-const PERSON3_PASSWORD = process.env.PERSON3_PASSWORD || '';
-const ANONYMOUS_LABEL = 'ناشناس';
+const SHARED_ROOM_KEY = process.env.SHARED_ROOM_KEY || 'big-sister-private-room';
+const LITTLE_BROTHER_PASSWORD = process.env.LITTLE_BROTHER_PASSWORD || process.env.ME_PASSWORD || '';
+const BIG_SISTER_PASSWORD = process.env.BIG_SISTER_PASSWORD || process.env.SISTER_PASSWORD || '';
+const LITTLE_BROTHER_LABEL = process.env.LITTLE_BROTHER_LABEL || process.env.ME_LABEL || 'داداش کوچیکه';
+const BIG_SISTER_LABEL = process.env.BIG_SISTER_LABEL || process.env.SISTER_LABEL || 'آبجی بزرگه';
+const ANONYMOUS_LABEL = process.env.ANONYMOUS_LABEL || 'ناشناس';
 const DATABASE_URL = String(process.env.DATABASE_URL || '').trim();
 const pool = new Pool({
   connectionString: DATABASE_URL || undefined,
@@ -38,7 +39,12 @@ const server = http.createServer(app);
 const io = new SocketIOServer(server, {
   cors: { origin: process.env.CORS_ORIGIN || '*', methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] },
   maxHttpBufferSize: 30 * 1024 * 1024,
+  pingInterval: 5000,
+  pingTimeout: 8000,
 });
+
+const activeSocketsByDevice = new Map();
+const onlineDevicesByRoom = new Map();
 
 app.use(helmet({ crossOriginResourcePolicy: false }));
 app.use(cors({ origin: process.env.CORS_ORIGIN || '*' }));
@@ -66,7 +72,7 @@ function signToken(device) {
   return jwt.sign(
     { deviceId: device.id, roomId: device.room_id, role: device.role, label: device.label },
     JWT_SECRET,
-    { expiresIn: '365d', issuer: 'kalantar-three-person' },
+    { expiresIn: '365d', issuer: 'big-sister-notes' },
   );
 }
 
@@ -95,16 +101,7 @@ async function touchDevice(deviceId) {
 }
 
 function validateRole(role) {
-  return ['person1', 'person2', 'person3'].includes(role);
-}
-
-function roleConfig(role) {
-  const config = {
-    person1: { password: PERSON1_PASSWORD, label: ANONYMOUS_LABEL },
-    person2: { password: PERSON2_PASSWORD, label: ANONYMOUS_LABEL },
-    person3: { password: PERSON3_PASSWORD, label: ANONYMOUS_LABEL },
-  };
-  return config[role] || null;
+  return role === 'me' || role === 'sister' || role === 'guest';
 }
 
 function chooseNewer(localItem, remoteItem) {
@@ -186,20 +183,25 @@ async function ensureAccount(roomId, role, password, label) {
 }
 
 app.post('/api/auth/login', async (req, res) => {
-  const role = String(req.body?.role || '');
+  const requestedRole = req.body?.role == null ? null : String(req.body.role);
   const password = String(req.body?.password || '');
-  if (!validateRole(role) || password.length < 4) {
+  if ((requestedRole != null && (!validateRole(requestedRole) || requestedRole === 'guest')) || password.length < 4) {
     return res.status(400).json({ error: 'invalid_login' });
   }
   try {
     const room = await ensureSharedRoom();
-    const config = roleConfig(role);
-    const expected = config?.password || '';
-    const label = config?.label || role;
-    if (!expected) throw new Error('missing_password');
-    const account = await pool.query('SELECT password_hash FROM accounts WHERE room_id = $1 AND role = $2', [room.id, role]);
-    const hash = account.rows[0]?.password_hash || await bcrypt.hash(expected, 12);
-    if (!(await bcrypt.compare(password, hash))) {
+    let role = requestedRole;
+    if (!role) {
+      const sisterMatch = BIG_SISTER_PASSWORD && password === BIG_SISTER_PASSWORD;
+      const brotherMatch = LITTLE_BROTHER_PASSWORD && password === LITTLE_BROTHER_PASSWORD;
+      if (sisterMatch === brotherMatch) {
+        return res.status(401).json({ error: sisterMatch ? 'duplicate_passwords' : 'invalid_login' });
+      }
+      role = sisterMatch ? 'sister' : 'me';
+    }
+    const label = role === 'guest' ? ANONYMOUS_LABEL : (role === 'me' ? LITTLE_BROTHER_LABEL : BIG_SISTER_LABEL);
+    const expected = role === 'me' ? LITTLE_BROTHER_PASSWORD : BIG_SISTER_PASSWORD;
+    if (!expected || password !== expected) {
       return res.status(401).json({ error: 'invalid_login' });
     }
     const device = await ensureAccount(room.id, role, expected, label);
@@ -216,24 +218,96 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-app.get('/', (_req, res) => res.json({ service: 'kalantar-three-person', health: '/api/health' }));
+
+app.post('/api/auth/anonymous', async (req, res) => {
+  const role = String(req.body?.role || '').trim();
+  const clientKey = String(req.body?.clientKey || '').trim().slice(0, 128);
+  if (!validateRole(role) || clientKey.length < 12) {
+    return res.status(400).json({ error: 'invalid_anonymous_login' });
+  }
+  try {
+    const room = await ensureSharedRoom();
+    let deviceResult = await pool.query(
+      'SELECT id, room_id, role, label FROM devices WHERE room_id = $1 AND client_key = $2 LIMIT 1',
+      [room.id, clientKey],
+    );
+    let device = deviceResult.rows[0];
+    if (!device) {
+      deviceResult = await pool.query(
+        'SELECT id, room_id, role, label FROM devices WHERE room_id = $1 AND role = $2 LIMIT 1',
+        [room.id, role],
+      );
+      device = deviceResult.rows[0];
+    }
+
+    if (device) {
+      // The named roles are stable identities. The anonymous role is a single slot.
+      if (device.role !== role && role === 'guest') {
+        return res.status(409).json({ error: 'role_taken' });
+      }
+      if (device.role === 'guest') {
+        const bound = await pool.query(
+          'SELECT client_key FROM devices WHERE id = $1',
+          [device.id],
+        );
+        const existingKey = bound.rows[0]?.client_key;
+        if (existingKey && existingKey !== clientKey) {
+          return res.status(409).json({ error: 'role_taken' });
+        }
+        if (!existingKey) {
+          await pool.query('UPDATE devices SET client_key = $2 WHERE id = $1', [device.id, clientKey]);
+        }
+        if (device.label !== ANONYMOUS_LABEL) {
+          await pool.query('UPDATE devices SET label = $2 WHERE id = $1', [device.id, ANONYMOUS_LABEL]);
+          device.label = ANONYMOUS_LABEL;
+        }
+      }
+    } else {
+      const members = await pool.query('SELECT COUNT(*)::int AS count FROM devices WHERE room_id = $1', [room.id]);
+      if (Number(members.rows[0]?.count || 0) >= 3) {
+        return res.status(409).json({ error: 'room_full' });
+      }
+      const label = role === 'guest' ? ANONYMOUS_LABEL : (role === 'me' ? LITTLE_BROTHER_LABEL : BIG_SISTER_LABEL);
+      const created = await pool.query(
+        'INSERT INTO devices (room_id, role, label, client_key) VALUES ($1, $2, $3, $4) RETURNING id, room_id, role, label',
+        [room.id, role, label, clientKey],
+      );
+      device = created.rows[0];
+    }
+
+    return res.json({
+      token: signToken(device),
+      roomId: room.id,
+      deviceId: device.id,
+      role: device.role,
+      label: device.label,
+    });
+  } catch (e) {
+    if (String(e.message).includes('client_key') || String(e.code) === '23505') {
+      return res.status(409).json({ error: 'role_taken' });
+    }
+    return res.status(500).json({ error: 'anonymous_login_failed' });
+  }
+});
+
+app.get('/', (_req, res) => res.json({ service: 'big-sister-sync', health: '/api/health' }));
 
 app.get('/api/health', async (_req, res) => {
   if (!dbReady) {
     return res.status(503).json({
       ok: false,
-      service: 'kalantar-three-person',
+      service: 'big-sister-sync',
       status: 'starting',
       error: dbInitError || 'database_not_ready',
     });
   }
   try {
     await pool.query('SELECT 1');
-    return res.json({ ok: true, service: 'kalantar-three-person', time: new Date().toISOString() });
+    return res.json({ ok: true, service: 'big-sister-sync', time: new Date().toISOString() });
   } catch (e) {
     dbReady = false;
     dbInitError = 'database_unavailable';
-    return res.status(503).json({ ok: false, service: 'kalantar-three-person', status: 'database_unavailable' });
+    return res.status(503).json({ ok: false, service: 'big-sister-sync', status: 'database_unavailable' });
   }
 });
 
@@ -242,7 +316,7 @@ app.post('/api/pair/create', async (req, res) => {
   if (!validateRole(role)) return res.status(400).json({ error: 'invalid_role' });
   const code = randomCode(8);
   const pairPin = randomPin();
-  const label = ANONYMOUS_LABEL;
+  const label = role === 'me' ? LITTLE_BROTHER_LABEL : BIG_SISTER_LABEL;
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -294,7 +368,7 @@ app.post('/api/pair/join', async (req, res) => {
   const members = await pool.query('SELECT id, role, label FROM devices WHERE room_id = $1', [room.id]);
   if (members.rowCount >= 3) return res.status(409).json({ error: 'room_full' });
   if (members.rows.some(d => d.role === requestedRole)) return res.status(409).json({ error: 'role_taken' });
-  const label = ANONYMOUS_LABEL;
+  const label = requestedRole === 'guest' ? ANONYMOUS_LABEL : (requestedRole === 'me' ? LITTLE_BROTHER_LABEL : BIG_SISTER_LABEL);
   const device = await pool.query(
     'INSERT INTO devices (room_id, role, label) VALUES ($1, $2, $3) RETURNING id, room_id, role, label',
     [room.id, requestedRole, label],
@@ -354,6 +428,89 @@ app.put('/api/sync/snapshot', auth, async (req, res) => {
   }
 });
 
+
+app.get('/api/checkins', auth, async (req, res) => {
+  await touchDevice(req.user.deviceId);
+  const moods = await pool.query(
+    `SELECT mood, COUNT(*)::int AS count
+     FROM mood_checkins WHERE room_id = $1
+     GROUP BY mood ORDER BY mood`,
+    [req.user.roomId],
+  );
+  const needs = await pool.query(
+    `SELECT value AS need, COUNT(*)::int AS count
+     FROM need_checkins n
+     CROSS JOIN LATERAL jsonb_array_elements_text(n.needs) AS value
+     WHERE n.room_id = $1
+     GROUP BY value ORDER BY value`,
+    [req.user.roomId],
+  );
+  const mine = await pool.query(
+    `SELECT
+       (SELECT mood FROM mood_checkins WHERE room_id = $1 AND device_id = $2) AS mood,
+       (SELECT needs FROM need_checkins WHERE room_id = $1 AND device_id = $2) AS needs,
+       (SELECT choice FROM draw_choices WHERE room_id = $1 AND device_id = $2) AS draw_choice`,
+    [req.user.roomId, req.user.deviceId],
+  );
+  const drawCounts = await pool.query(
+    `SELECT choice, COUNT(*)::int AS count FROM draw_choices
+     WHERE room_id = $1 GROUP BY choice`,
+    [req.user.roomId],
+  );
+  return res.json({
+    moodCounts: Object.fromEntries(moods.rows.map((r) => [r.mood, Number(r.count)])),
+    needCounts: Object.fromEntries(needs.rows.map((r) => [r.need, Number(r.count)])),
+    myMood: mine.rows[0]?.mood || null,
+    myNeeds: Array.isArray(mine.rows[0]?.needs) ? mine.rows[0].needs : [],
+    myDrawChoice: mine.rows[0]?.draw_choice || null,
+    drawCounts: Object.fromEntries(drawCounts.rows.map((r) => [r.choice, Number(r.count)])),
+  });
+});
+
+app.post('/api/checkins/mood', auth, async (req, res) => {
+  await touchDevice(req.user.deviceId);
+  const allowed = new Set(['not_good', 'good', 'happy', 'sad', 'hurt']);
+  const mood = String(req.body?.mood || '');
+  if (!allowed.has(mood)) return res.status(400).json({ error: 'invalid_mood' });
+  await pool.query(
+    `INSERT INTO mood_checkins(room_id, device_id, mood)
+     VALUES($1,$2,$3)
+     ON CONFLICT(room_id,device_id) DO UPDATE SET mood=EXCLUDED.mood, updated_at=now()`,
+    [req.user.roomId, req.user.deviceId, mood],
+  );
+  io.to(`room:${req.user.roomId}`).emit('checkins:changed', { kind: 'mood' });
+  return res.json({ ok: true });
+});
+
+app.post('/api/checkins/needs', auth, async (req, res) => {
+  await touchDevice(req.user.deviceId);
+  const allowed = new Set(['آرامش', 'حواس‌پرتی', 'حرف زدن', 'انرژی', 'تنهایی']);
+  const needs = Array.isArray(req.body?.needs)
+    ? [...new Set(req.body.needs.map((v) => String(v)).filter((v) => allowed.has(v)))].slice(0, 5)
+    : [];
+  await pool.query(
+    `INSERT INTO need_checkins(room_id, device_id, needs) VALUES($1,$2,$3)
+     ON CONFLICT(room_id,device_id) DO UPDATE SET needs=EXCLUDED.needs, updated_at=now()`,
+    [req.user.roomId, req.user.deviceId, JSON.stringify(needs)],
+  );
+  io.to(`room:${req.user.roomId}`).emit('checkins:changed', { kind: 'needs' });
+  return res.json({ ok: true });
+});
+
+app.post('/api/checkins/draw', auth, async (req, res) => {
+  await touchDevice(req.user.deviceId);
+  const choice = String(req.body?.choice || '');
+  if (!['yes', 'no'].includes(choice)) return res.status(400).json({ error: 'invalid_draw_choice' });
+  await pool.query(
+    `INSERT INTO draw_choices(room_id, device_id, choice)
+     VALUES($1,$2,$3)
+     ON CONFLICT(room_id,device_id) DO UPDATE SET choice=EXCLUDED.choice, updated_at=now()`,
+    [req.user.roomId, req.user.deviceId, choice],
+  );
+  io.to(`room:${req.user.roomId}`).emit('checkins:changed', { kind: 'draw' });
+  return res.json({ ok: true });
+});
+
 app.get('/api/chat/messages', auth, async (req, res) => {
   await touchDevice(req.user.deviceId);
   const limit = Math.min(Math.max(Number(req.query.limit || 50), 1), 100);
@@ -364,7 +521,7 @@ app.get('/api/chat/messages', auth, async (req, res) => {
   if (before && !Number.isNaN(before.getTime())) { q += ' AND created_at < $3'; params.push(before); }
   q += ' ORDER BY created_at DESC LIMIT $2';
   const result = await pool.query(q, params);
-  return res.json({ messages: result.rows.reverse().map((m) => ({ ...m, sender_id: 'anonymous' })) });
+  return res.json({ messages: result.rows.reverse() });
 });
 
 async function sha256File(filePath) {
@@ -412,7 +569,7 @@ async function saveMediaRecord({ roomId, uploaderId, kind, file, contentHash }) 
 app.post('/api/media', auth, upload.single('file'), async (req, res) => {
   await touchDevice(req.user.deviceId);
   if (!req.file) return res.status(400).json({ error: 'file_required' });
-  const kind = ['image', 'audio', 'file'].includes(req.body?.kind) ? req.body.kind : 'file';
+  const kind = ['image', 'video', 'audio', 'file'].includes(req.body?.kind) ? req.body.kind : 'file';
   try {
     const contentHash = await sha256File(req.file.path);
     const saved = await saveMediaRecord({
@@ -432,7 +589,7 @@ app.post('/api/media', auth, upload.single('file'), async (req, res) => {
 app.post('/api/sync/media', auth, upload.single('file'), async (req, res) => {
   await touchDevice(req.user.deviceId);
   if (!req.file) return res.status(400).json({ error: 'file_required' });
-  const kind = ['image', 'audio'].includes(req.body?.kind) ? req.body.kind : 'file';
+  const kind = ['image', 'video', 'audio'].includes(req.body?.kind) ? req.body.kind : 'file';
   try {
     const contentHash = String(req.body?.sha256 || '').trim().toLowerCase() || await sha256File(req.file.path);
     if (!/^[a-f0-9]{64}$/.test(contentHash)) {
@@ -453,70 +610,6 @@ app.post('/api/sync/media', auth, upload.single('file'), async (req, res) => {
   }
 });
 
-app.get('/api/checkins', auth, async (req, res) => {
-  await touchDevice(req.user.deviceId);
-  const moods = await pool.query(
-    `SELECT mood, COUNT(*)::int AS count
-     FROM mood_checkins WHERE room_id = $1
-     GROUP BY mood ORDER BY mood`,
-    [req.user.roomId],
-  );
-  const needs = await pool.query(
-    `SELECT value AS need, COUNT(*)::int AS count
-     FROM need_checkins n
-     CROSS JOIN LATERAL jsonb_array_elements_text(n.needs) AS value
-     WHERE n.room_id = $1
-     GROUP BY value ORDER BY value`,
-    [req.user.roomId],
-  );
-  return res.json({
-    moodCounts: Object.fromEntries(moods.rows.map((r) => [r.mood, Number(r.count)])),
-    needCounts: Object.fromEntries(needs.rows.map((r) => [r.need, Number(r.count)])),
-  });
-});
-
-app.post('/api/checkins/mood', auth, async (req, res) => {
-  await touchDevice(req.user.deviceId);
-  const allowed = new Set(['not_good', 'good', 'happy', 'sad', 'hurt']);
-  const mood = String(req.body?.mood || '');
-  if (!allowed.has(mood)) return res.status(400).json({ error: 'invalid_mood' });
-  await pool.query(
-    `INSERT INTO mood_checkins(room_id, device_id, mood) VALUES($1,$2,$3)
-     ON CONFLICT(room_id,device_id) DO UPDATE SET mood=EXCLUDED.mood, updated_at=now()`,
-    [req.user.roomId, req.user.deviceId, mood],
-  );
-  io.to(`room:${req.user.roomId}`).emit('checkins:changed', { kind: 'mood' });
-  return res.json({ ok: true });
-});
-
-app.post('/api/checkins/needs', auth, async (req, res) => {
-  await touchDevice(req.user.deviceId);
-  const allowed = new Set(['آرامش', 'حواس‌پرتی', 'حرف زدن', 'انرژی', 'تنهایی']);
-  const needs = Array.isArray(req.body?.needs)
-    ? [...new Set(req.body.needs.map((v) => String(v)).filter((v) => allowed.has(v)))].slice(0, 5)
-    : [];
-  await pool.query(
-    `INSERT INTO need_checkins(room_id, device_id, needs) VALUES($1,$2,$3)
-     ON CONFLICT(room_id,device_id) DO UPDATE SET needs=EXCLUDED.needs, updated_at=now()`,
-    [req.user.roomId, req.user.deviceId, JSON.stringify(needs)],
-  );
-  io.to(`room:${req.user.roomId}`).emit('checkins:changed', { kind: 'needs' });
-  return res.json({ ok: true });
-});
-
-app.get('/api/media', auth, async (req, res) => {
-  await touchDevice(req.user.deviceId);
-  const result = await pool.query(
-    `SELECT id, kind, original_name, mime, bytes, created_at
-     FROM media WHERE room_id = $1 ORDER BY created_at DESC LIMIT 200`,
-    [req.user.roomId],
-  );
-  return res.json({ media: result.rows.map((r) => ({
-    id: r.id, kind: r.kind, originalName: r.original_name, mime: r.mime,
-    bytes: Number(r.bytes), createdAt: r.created_at,
-  })) });
-});
-
 app.get('/api/media/:id', auth, async (req, res) => {
   const result = await pool.query('SELECT * FROM media WHERE id = $1 AND room_id = $2', [req.params.id, req.user.roomId]);
   const row = result.rows[0];
@@ -533,35 +626,75 @@ app.get('/api/media/:id', auth, async (req, res) => {
   }
 });
 
-app.post('/api/chat/messages', auth, async (req, res) => {
-  await touchDevice(req.user.deviceId);
-  const requestedId = String(req.body?.id || '');
-  const id = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestedId)
+async function createChatMessage({ roomId, deviceId, body, id, type, attachmentId, attachmentName, replyTo, reaction }) {
+  const requestedId = String(id || '');
+  const messageId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestedId)
     ? requestedId
     : crypto.randomUUID();
-  const type = ['text','image','audio','file'].includes(req.body?.type) ? req.body.type : 'text';
-  const body = String(req.body?.body || '').slice(0, 20000);
-  const attachmentId = req.body?.attachmentId || null;
-  const attachmentName = req.body?.attachmentName ? String(req.body.attachmentName).slice(0, 255) : null;
-  const replyTo = req.body?.replyTo || null;
-  const reaction = req.body?.reaction || null;
-  if (attachmentId) {
+  const safeType = ['text','image','video','audio','file'].includes(type) ? type : 'text';
+  const safeBody = String(body || '').slice(0, 20000);
+  const safeAttachmentId = attachmentId || null;
+  const safeAttachmentName = attachmentName ? String(attachmentName).slice(0, 255) : null;
+  const safeReplyTo = replyTo || null;
+  const safeReaction = reaction || null;
+
+  if (safeAttachmentId) {
     const attachment = await pool.query(
       'SELECT id FROM media WHERE id = $1 AND room_id = $2',
-      [attachmentId, req.user.roomId],
+      [safeAttachmentId, roomId],
     );
-    if (!attachment.rows[0]) return res.status(400).json({ error: 'attachment_not_found' });
+    if (!attachment.rows[0]) throw new Error('attachment_not_found');
   }
+  if (safeReplyTo) {
+    const reply = await pool.query(
+      'SELECT id FROM messages WHERE id = $1 AND room_id = $2',
+      [safeReplyTo, roomId],
+    );
+    if (!reply.rows[0]) throw new Error('reply_target_not_found');
+  }
+
   const result = await pool.query(
-    `INSERT INTO messages(id, room_id, sender_id, type, body, attachment_id, attachment_name, reply_to, reaction)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+    `INSERT INTO messages(id, room_id, sender_id, type, body, attachment_id, attachment_name, reply_to, reaction, delivered_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,now())
+     ON CONFLICT (id) DO NOTHING
      RETURNING id, sender_id, type, body, attachment_id, attachment_name, reply_to, reaction, created_at, delivered_at, read_at`,
-    [id, req.user.roomId, req.user.deviceId, type, body, attachmentId, attachmentName, replyTo, reaction],
+    [messageId, roomId, deviceId, safeType, safeBody, safeAttachmentId, safeAttachmentName, safeReplyTo, safeReaction],
   );
-  const message = result.rows[0];
-  const publicMessage = { ...message, sender_id: 'anonymous' };
-  io.to(`room:${req.user.roomId}`).emit('chat:message', publicMessage);
-  return res.status(201).json({ message: publicMessage });
+  if (result.rows[0]) {
+    const message = result.rows[0];
+    io.to(`room:${roomId}`).emit('chat:message', message);
+    return message;
+  }
+  const existing = await pool.query(
+    `SELECT id, sender_id, type, body, attachment_id, attachment_name, reply_to, reaction, created_at, delivered_at, read_at
+     FROM messages WHERE id = $1 AND room_id = $2`,
+    [messageId, roomId],
+  );
+  return existing.rows[0] || null;
+}
+
+app.post('/api/chat/messages', auth, async (req, res) => {
+  await touchDevice(req.user.deviceId);
+  try {
+    const message = await createChatMessage({
+      roomId: req.user.roomId,
+      deviceId: req.user.deviceId,
+      id: req.body?.id,
+      type: req.body?.type,
+      body: req.body?.body,
+      attachmentId: req.body?.attachmentId,
+      attachmentName: req.body?.attachmentName,
+      replyTo: req.body?.replyTo,
+      reaction: req.body?.reaction,
+    });
+    if (!message) return res.status(500).json({ error: 'message_create_failed' });
+    return res.status(201).json({ message });
+  } catch (e) {
+    if (e?.message === 'attachment_not_found' || e?.message === 'reply_target_not_found') {
+      return res.status(400).json({ error: e.message });
+    }
+    return res.status(500).json({ error: 'message_create_failed' });
+  }
 });
 
 app.patch('/api/chat/messages/:id/read', auth, async (req, res) => {
@@ -587,6 +720,94 @@ app.patch('/api/chat/messages/:id/reaction', auth, async (req, res) => {
   return res.json(updated.rows[0]);
 });
 
+app.delete('/api/chat/messages/:id', auth, async (req, res) => {
+  const messageId = String(req.params.id || '').trim();
+  if (!messageId) return res.status(400).json({ error: 'invalid_message_id' });
+
+  const found = await pool.query(
+    `SELECT id, attachment_id
+     FROM messages
+     WHERE id = $1 AND room_id = $2`,
+    [messageId, req.user.roomId],
+  );
+  const message = found.rows[0];
+  if (!message) return res.status(404).json({ error: 'message_not_found' });
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      'DELETE FROM messages WHERE id = $1 AND room_id = $2',
+      [messageId, req.user.roomId],
+    );
+
+    if (message.attachment_id) {
+      const media = await client.query(
+        'SELECT disk_name FROM media WHERE id = $1 AND room_id = $2',
+        [message.attachment_id, req.user.roomId],
+      );
+      await client.query(
+        'DELETE FROM media WHERE id = $1 AND room_id = $2',
+        [message.attachment_id, req.user.roomId],
+      );
+      const diskName = media.rows[0]?.disk_name;
+      if (diskName) {
+        await fs.rm(path.join(MEDIA_DIR, diskName), { force: true });
+      }
+    }
+
+    await client.query('COMMIT');
+    io.to(`room:${req.user.roomId}`).emit('chat:deleted', { id: messageId });
+    return res.json({ ok: true, id: messageId });
+  } catch {
+    await client.query('ROLLBACK');
+    return res.status(500).json({ error: 'message_delete_failed' });
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/api/letters', auth, async (req, res) => {
+  await touchDevice(req.user.deviceId);
+  const limit = Math.min(Math.max(Number(req.query.limit || 100), 1), 200);
+  const result = await pool.query(
+    `SELECT id, sender_id, title, body, created_at, read_at
+     FROM letters WHERE room_id = $1
+     ORDER BY created_at ASC LIMIT $2`,
+    [req.user.roomId, limit],
+  );
+  return res.json({ letters: result.rows });
+});
+
+app.post('/api/letters', auth, async (req, res) => {
+  await touchDevice(req.user.deviceId);
+  const title = String(req.body?.title || '').trim().slice(0, 255) || 'نامه';
+  const body = String(req.body?.body || '').trim().slice(0, 50000);
+  if (!body) return res.status(400).json({ error: 'letter_body_required' });
+  const id = crypto.randomUUID();
+  const result = await pool.query(
+    `INSERT INTO letters(id, room_id, sender_id, title, body)
+     VALUES ($1,$2,$3,$4,$5)
+     RETURNING id, sender_id, title, body, created_at, read_at`,
+    [id, req.user.roomId, req.user.deviceId, title, body],
+  );
+  const letter = result.rows[0];
+  io.to(`room:${req.user.roomId}`).emit('letter:new', letter);
+  return res.status(201).json({ letter });
+});
+
+app.patch('/api/letters/:id/read', auth, async (req, res) => {
+  const result = await pool.query(
+    `UPDATE letters SET read_at = COALESCE(read_at, now())
+     WHERE id = $1 AND room_id = $2
+     RETURNING id, read_at`,
+    [req.params.id, req.user.roomId],
+  );
+  if (!result.rows[0]) return res.status(404).json({ error: 'letter_not_found' });
+  io.to(`room:${req.user.roomId}`).emit('letter:read', { id: req.params.id, readAt: result.rows[0].read_at });
+  return res.json(result.rows[0]);
+});
+
 io.use((socket, next) => {
   try {
     const header = socket.handshake.auth?.token || socket.handshake.headers?.authorization || '';
@@ -601,11 +822,48 @@ io.use((socket, next) => {
 io.on('connection', async (socket) => {
   const { roomId, deviceId } = socket.user;
   socket.join(`room:${roomId}`);
+
+  const count = (activeSocketsByDevice.get(deviceId) || 0) + 1;
+  activeSocketsByDevice.set(deviceId, count);
+  let roomDevices = onlineDevicesByRoom.get(roomId);
+  if (!roomDevices) {
+    roomDevices = new Set();
+    onlineDevicesByRoom.set(roomId, roomDevices);
+  }
+  const wasOnlineInRoom = roomDevices.has(deviceId);
+  roomDevices.add(deviceId);
   await touchDevice(deviceId);
-  io.to(`room:${roomId}`).emit('presence', { deviceId, online: true, at: new Date().toISOString() });
+
+  socket.emit('presence:state', {
+    deviceIds: Array.from(roomDevices),
+    at: new Date().toISOString(),
+  });
+  if (!wasOnlineInRoom) {
+    io.to(`room:${roomId}`).emit('presence', { deviceId, online: true, at: new Date().toISOString() });
+  }
 
   socket.on('typing', (value) => {
-    socket.to(`room:${roomId}`).emit('typing', { typing: Boolean(value) });
+    socket.to(`room:${roomId}`).emit('typing', { deviceId, typing: Boolean(value) });
+  });
+
+  socket.on('chat:send', async (payload, ack) => {
+    try {
+      await touchDevice(deviceId);
+      const message = await createChatMessage({
+        roomId,
+        deviceId,
+        id: payload?.id,
+        type: payload?.type,
+        body: payload?.body,
+        attachmentId: payload?.attachmentId,
+        attachmentName: payload?.attachmentName,
+        replyTo: payload?.replyTo,
+        reaction: payload?.reaction,
+      });
+      if (typeof ack === 'function') ack(message || null);
+    } catch (e) {
+      if (typeof ack === 'function') ack({ error: e?.message || 'message_create_failed' });
+    }
   });
 
   socket.on('message:delivered', async (messageId) => {
@@ -619,13 +877,22 @@ io.on('connection', async (socket) => {
   });
 
   socket.on('disconnect', async () => {
+    const nextCount = Math.max(0, (activeSocketsByDevice.get(deviceId) || 1) - 1);
+    if (nextCount === 0) activeSocketsByDevice.delete(deviceId);
+    else activeSocketsByDevice.set(deviceId, nextCount);
     await touchDevice(deviceId);
-    io.to(`room:${roomId}`).emit('presence', { deviceId, online: false, at: new Date().toISOString() });
+
+    if (nextCount === 0) {
+      const roomDevices = onlineDevicesByRoom.get(roomId);
+      roomDevices?.delete(deviceId);
+      if (roomDevices && roomDevices.size === 0) onlineDevicesByRoom.delete(roomId);
+      io.to(`room:${roomId}`).emit('presence', { deviceId, online: false, at: new Date().toISOString() });
+    }
   });
 });
 
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`Kalantar three-person server listening on ${PORT}`);
+  console.log(`Big Sister sync server listening on ${PORT}`);
   void initDbWithRetry();
 });
 
@@ -633,14 +900,11 @@ async function initDb() {
   if (!DATABASE_URL) {
     throw new Error('DATABASE_URL is missing');
   }
-  if (!PERSON1_PASSWORD) {
-    throw new Error('PERSON1_PASSWORD is missing');
+  if (!LITTLE_BROTHER_PASSWORD) {
+    throw new Error('LITTLE_BROTHER_PASSWORD is missing');
   }
-  if (!PERSON2_PASSWORD) {
-    throw new Error('PERSON2_PASSWORD is missing');
-  }
-  if (!PERSON3_PASSWORD) {
-    throw new Error('PERSON3_PASSWORD is missing');
+  if (!BIG_SISTER_PASSWORD) {
+    throw new Error('BIG_SISTER_PASSWORD is missing');
   }
   if (!JWT_SECRET) {
     throw new Error('JWT_SECRET is missing');
@@ -648,9 +912,8 @@ async function initDb() {
   const sql = await fs.readFile(new URL('../schema.sql', import.meta.url), 'utf8');
   await pool.query(sql);
   const room = await ensureSharedRoom();
-  await ensureAccount(room.id, 'person1', PERSON1_PASSWORD, ANONYMOUS_LABEL);
-  await ensureAccount(room.id, 'person2', PERSON2_PASSWORD, ANONYMOUS_LABEL);
-  await ensureAccount(room.id, 'person3', PERSON3_PASSWORD, ANONYMOUS_LABEL);
+  await ensureAccount(room.id, 'me', LITTLE_BROTHER_PASSWORD, LITTLE_BROTHER_LABEL);
+  await ensureAccount(room.id, 'sister', BIG_SISTER_PASSWORD, BIG_SISTER_LABEL);
 }
 
 async function initDbWithRetry() {
